@@ -45,6 +45,7 @@ from .db_chroma import (
 from . import db_reports
 
 from .voice_service import generate_health_voice_insight
+from .pdf_to_json import extract_lab_json_from_pdf, extract_text_from_pdf
 
 # ---- SQLite Database Setup ----
 
@@ -691,6 +692,118 @@ async def get_report_status(txn_id: str):
                 "inr": round(cost_inr, 4)
             }
         }
+
+from fastapi import UploadFile, File as FastAPIFile, Form, Query
+
+# ---- PDF-to-JSON Endpoints ----
+
+@router.post("/pdf_to_lab_json")
+async def pdf_to_lab_json(
+    file: UploadFile = FastAPIFile(..., description="Digitized PDF lab report"),
+    user_id: str = Form(default="", description="User identifier (optional)"),
+):
+    """Upload a digitized PDF and get the exact LabParameterSchema JSON.
+
+    The returned JSON can be posted directly to ``/api/v1/lab_parameters``
+    to trigger the deep research pipeline.
+
+    Accepts:
+        - multipart/form-data with field ``file`` (PDF bytes)
+
+    Form fields:
+        - user_id (optional): Pre-fill the user_id field in the output JSON.
+
+    Returns:
+        JSON matching LabParameterSchema.
+    """
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="No PDF file provided or file is empty.")
+
+    try:
+        result = await extract_lab_json_from_pdf(file_bytes, user_id=user_id)
+        return JSONResponse(content=result, status_code=HTTPStatus.OK)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {exc}")
+
+
+@router.post("/upload_pdf_report")
+async def upload_pdf_report(
+    file: UploadFile = FastAPIFile(..., description="Digitized PDF lab report"),
+    user_id: str = Form(..., description="User identifier"),
+    language: str = Form(default="english", description="Response language"),
+    model: str = Form(default="openai", description="AI model strategy"),
+):
+    """Upload a PDF lab report → extract parameters → trigger deep research.
+
+    This is a convenience endpoint that combines:
+      1. PDF text extraction via pdfplumber
+      2. LLM structuring into LabParameterSchema
+      3. Automatic submission to the deep research pipeline
+
+    Returns the same response as ``POST /api/v1/lab_parameters`` (txn_id etc.).
+    """
+    content_type = file.content_type or "application/pdf"
+    if "pdf" not in content_type.lower():
+        raise HTTPException(status_code=400, detail=f"Expected a PDF file, got {content_type}")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
+
+    # Step 1: Extract and structure the PDF into LabParameterSchema JSON
+    try:
+        lab_json = await extract_lab_json_from_pdf(file_bytes, user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    # Step 2: Override caller-supplied fields
+    lab_json["user_id"] = user_id
+    lab_json["language"] = language
+    lab_json["model"] = model
+
+    # Step 3: Validate via the existing schema
+    try:
+        lab_data = LabParameterSchema(**lab_json)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Extracted data does not match expected schema: {exc}",
+        )
+
+    # Step 4: Delegate to the existing lab_parameters handler
+    return await upload_lab_report(lab_data)
+
+
+@router.post("/pdf_extract_text")
+async def pdf_extract_text(
+    file: UploadFile = FastAPIFile(..., description="Digitized PDF file"),
+):
+    """Extract raw text from a PDF using pdfplumber (no LLM call).
+
+    Useful for debugging or when you want to inspect the extracted text
+    before converting it to the LabParameterSchema JSON.
+    """
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
+
+    try:
+        text = extract_text_from_pdf(file_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return JSONResponse(
+        content={"text": text, "character_count": len(text)},
+        status_code=HTTPStatus.OK,
+    )
+
 
 # ---- Background Processing ----
 

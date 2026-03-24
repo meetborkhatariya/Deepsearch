@@ -1,0 +1,257 @@
+{
+  "user_id": "person21b_1",
+  "parameterName": "HbA1c",
+  "currentValue": "6.2",
+  "reportDate": "2026-03-08",
+  "reportId": "6989978c50e42cebbbe4f1af",
+  "previousValues": [
+    {
+      "value": "5.9",
+      "date": "2026-02-08",
+      "unit": "%"
+    }
+  ],
+  "linkedParameters": {
+    "hba1c": {
+      "name": "HbA1c",
+      "normalRange": "",
+      "currentValues": [
+        {
+          "value": "6.2",
+          "date": "2026-03-08",
+          "unit": "%"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "5.9",
+          "date": "2026-02-08",
+          "unit": "%"
+        }
+      ]
+    },
+    "cholesterol": {
+      "name": "Total Cholesterol",
+      "normalRange": "0.1 - 200",
+      "currentValues": [
+        {
+          "value": "210",
+          "date": "2026-03-08",
+          "unit": "mg/dL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "188",
+          "date": "2026-02-08",
+          "unit": "mg/dL"
+        }
+      ]
+    },
+    "egfr": {
+      "name": "e-GFR",
+      "normalRange": "90 - 150",
+      "currentValues": [
+        {
+          "value": "180",
+          "date": "2026-03-08",
+          "unit": "mL/min/1.73 m2"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "114",
+          "date": "2026-02-08",
+          "unit": "mL/min/1.73 m2"
+        }
+      ]
+    },
+    "hdl": {
+      "name": "HDL",
+      "normalRange": "40 - 60",
+      "currentValues": [
+        {
+          "value": "67",
+          "date": "2026-03-08",
+          "unit": "mg/dL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "40",
+          "date": "2026-02-08",
+          "unit": "mg/dL"
+        }
+      ]
+    },
+    "ldl": {
+      "name": "LDL",
+      "normalRange": "0.1 - 100",
+      "currentValues": [
+        {
+          "value": "130",
+          "date": "2026-03-08",
+          "unit": "mg/dL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "134",
+          "date": "2026-02-08",
+          "unit": "mg/dL"
+        }
+      ]
+    },
+    "triglyceride": {
+      "name": "Triglyceride",
+      "normalRange": "0.1 - 150",
+      "currentValues": [
+        {
+          "value": "120",
+          "date": "2026-03-08",
+          "unit": "mg/dL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "65",
+          "date": "2026-02-08",
+          "unit": "mg/dL"
+        }
+      ]
+    },
+    "creatinine": {
+      "name": "Creatinine",
+      "normalRange": "0.5 - 1.2",
+      "currentValues": [
+        {
+          "value": "0.89",
+          "date": "2026-03-08",
+          "unit": "mg/dL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "0.51",
+          "date": "2026-02-08",
+          "unit": "mg/dL"
+        }
+      ]
+    },
+    "tsh_ultrasensitive": {
+      "name": "TSH Ultrasensitive",
+      "normalRange": "0.55 - 4.78",
+      "currentValues": [
+        {
+          "value": "5.1",
+          "date": "2026-03-08",
+          "unit": "uIU/mL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "4.44",
+          "date": "2026-02-08",
+          "unit": "uIU/mL"
+        }
+      ]
+    },
+    "red_blood_cell_count_rbc": {
+      "name": "Red Blood Cell Count (RBC)",
+      "normalRange": "3.8 - 5.8",
+      "currentValues": [
+        {
+          "value": "4.44",
+          "date": "2026-03-08",
+          "unit": "X 10^6/uL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "4.17",
+          "date": "2026-02-08",
+          "unit": "X 10^6/uL"
+        }
+      ]
+    },
+    "platelet_count": {
+      "name": "Platelet Count",
+      "normalRange": "1.5 - 4.5",
+      "currentValues": [
+        {
+          "value": "4.2",
+          "date": "2026-03-08",
+          "unit": "X 10^3/uL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "3.61",
+          "date": "2026-02-08",
+          "unit": "X 10^3/uL"
+        }
+      ]
+    },
+    "total_protein": {
+      "name": "Total Protein",
+      "normalRange": "6 - 8",
+      "currentValues": [
+        {
+          "value": "7.03",
+          "date": "2026-03-08",
+          "unit": "gm/dL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "6.52",
+          "date": "2026-02-08",
+          "unit": "gm/dL"
+        }
+      ]
+    },
+    "gamma_gt": {
+      "name": "Gamma GT",
+      "normalRange": "10 - 50",
+      "currentValues": [
+        {
+          "value": "11.2",
+          "date": "2026-03-08",
+          "unit": "U/L"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "19.9",
+          "date": "2026-02-08",
+          "unit": "U/L"
+        }
+      ]
+    },
+    "white_blood_cell_wbc": {
+      "name": "White Blood Cell (WBC)",
+      "normalRange": "4000 - 11000",
+      "currentValues": [
+        {
+          "value": "7234",
+          "date": "2026-03-08",
+          "unit": "X 10^3/uL"
+        }
+      ],
+      "previousValues": [
+        {
+          "value": "6540",
+          "date": "2026-02-08",
+          "unit": "X 10^3/uL"
+        }
+      ]
+    }
+  },
+  "age": 56,
+  "gender": "female",
+  "chronicCondition": [],
+  "bmi": null,
+  "steps": {},
+  "language": "english",
+  "model": "openai"
+}
