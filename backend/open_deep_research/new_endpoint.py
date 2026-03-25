@@ -140,8 +140,8 @@ def init_transaction_db():
                     try:
                         cursor.execute(f"ALTER TABLE transactions ADD COLUMN {col} {col_type}")
                     except Exception as e:
-                        # Best-effort: continue if ALTER fails
-                        pass
+                        # Best-effort: keep startup resilient while exposing migration issues.
+                        print(f"Warning: failed to add transactions.{col}: {e}")
 
             # Ensure indexes exist
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON transactions(user_id)")

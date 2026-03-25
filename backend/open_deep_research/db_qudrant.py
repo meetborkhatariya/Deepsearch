@@ -210,7 +210,7 @@ def init_db(auto_migrate: bool = True):
             if auto_migrate:
                 migrate_from_old_collection()
         else:
-            pass
+            print(f"Collection '{COLLECTION_NAME}' already exists")
     except Exception as e:
         print(f"Error initializing database: {e}")
         # Non-fatal — server starts without Qdrant; will fail on actual DB calls

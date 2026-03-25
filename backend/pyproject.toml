@@ -65,7 +65,7 @@ build-backend = "setuptools.build_meta"
 packages = ["open_deep_research"]
 
 [tool.setuptools.package-dir]
-"open_deep_research" = "."
+"open_deep_research" = "open_deep_research"
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
