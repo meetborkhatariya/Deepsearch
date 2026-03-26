@@ -208,6 +208,35 @@ def init_transaction_db():
         )
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at)")
+
+        # ── Health profile table ──
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_health_profiles (
+                user_id TEXT PRIMARY KEY,
+                -- personal details
+                height_cm REAL,
+                weight_kg REAL,
+                age INTEGER,
+                gender TEXT,
+                -- health goals
+                health_goal TEXT,
+                -- personal health info
+                blood_group TEXT,
+                allergies TEXT,
+                chronic_conditions TEXT,
+                smoking TEXT DEFAULT 'no',
+                alcohol TEXT DEFAULT 'no',
+                diet_type TEXT DEFAULT 'non-veg',
+                health_history TEXT,
+                surgeries TEXT,
+                -- timestamps
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            """
+        )
         conn.commit()
         
     except Exception as e:
@@ -631,6 +660,94 @@ async def auth_logout(request: Request, response: Response):
     _delete_session(token or "")
     response.delete_cookie(SESSION_COOKIE_NAME)
     return {"status": "success", "message": "Logged out"}
+
+
+# ─── Health Profile ──────────────────────────────────────────────────────────
+
+class HealthProfileUpdate(BaseModel):
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    health_goal: Optional[str] = None
+    blood_group: Optional[str] = None
+    allergies: Optional[str] = None
+    chronic_conditions: Optional[str] = None
+    smoking: Optional[str] = None
+    alcohol: Optional[str] = None
+    diet_type: Optional[str] = None
+    health_history: Optional[str] = None
+    surgeries: Optional[str] = None
+
+
+@router.get("/health-profile/{user_id}")
+async def get_health_profile(user_id: str, request: Request):
+    session_user = _get_session_user(request)
+    if not session_user or session_user["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM user_health_profiles WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return {"status": "success", "profile": None}
+        return {"status": "success", "profile": dict(row)}
+
+
+@router.put("/health-profile/{user_id}")
+async def upsert_health_profile(user_id: str, body: HealthProfileUpdate, request: Request):
+    session_user = _get_session_user(request)
+    if not session_user or session_user["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    now = _utc_now_iso()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM user_health_profiles WHERE user_id = ?", (user_id,))
+        exists = cursor.fetchone() is not None
+        if exists:
+            cursor.execute(
+                """
+                UPDATE user_health_profiles SET
+                    height_cm=?, weight_kg=?, age=?, gender=?,
+                    health_goal=?,
+                    blood_group=?, allergies=?, chronic_conditions=?,
+                    smoking=?, alcohol=?, diet_type=?,
+                    health_history=?, surgeries=?,
+                    updated_at=?
+                WHERE user_id=?
+                """,
+                (
+                    body.height_cm, body.weight_kg, body.age, body.gender,
+                    body.health_goal,
+                    body.blood_group, body.allergies, body.chronic_conditions,
+                    body.smoking, body.alcohol, body.diet_type,
+                    body.health_history, body.surgeries,
+                    now, user_id,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO user_health_profiles
+                    (user_id, height_cm, weight_kg, age, gender,
+                     health_goal,
+                     blood_group, allergies, chronic_conditions,
+                     smoking, alcohol, diet_type,
+                     health_history, surgeries,
+                     created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    user_id,
+                    body.height_cm, body.weight_kg, body.age, body.gender,
+                    body.health_goal,
+                    body.blood_group, body.allergies, body.chronic_conditions,
+                    body.smoking, body.alcohol, body.diet_type,
+                    body.health_history, body.surgeries,
+                    now, now,
+                ),
+            )
+    return {"status": "success", "message": "Health profile saved"}
 
 class TokenTracker:
     def __init__(self):

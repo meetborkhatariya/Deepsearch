@@ -323,15 +323,7 @@
 
 /* ── Page header ── */
 .page-header {
-  margin-bottom: var(--space-xl);
-}
-
-.page-header h2 {
-  margin-bottom: var(--space-xs);
-}
-
-.page-header p {
-  font-size: 0.9rem;
+  margin-bottom: var(--space-lg);
 }
 
 /* ── Responsive ── */

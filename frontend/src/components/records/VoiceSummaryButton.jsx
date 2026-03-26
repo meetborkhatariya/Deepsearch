@@ -19,10 +19,15 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
   const { user } = useAuth();
   const [generating, setGenerating] = useState(false);
   const [language, setLanguage] = useState("english");
+  // Local audio state so we show the player immediately after generation
+  const [localAudio, setLocalAudio] = useState(null);
+  const [localLang, setLocalLang] = useState(null);
 
   const voiceExplanation = analysis?.voice_explanation;
-  const hasVoice = !!voiceExplanation?.audio_base64;
-  const audioBase64 = voiceExplanation?.audio_base64;
+  const propsAudio = voiceExplanation?.audio_base64;
+  // Prefer local audio (freshly generated) over props (stale until parent re-fetches)
+  const audioBase64 = localAudio || propsAudio;
+  const hasVoice = !!audioBase64;
 
   const handleGenerate = async (isRegenerate = false) => {
     const reportId = analysis.reportId || analysis.report_id;
@@ -38,8 +43,15 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
     }
     setGenerating(true);
     try {
-      await generateVoice({ reportId, userId, txnId, language: isRegenerate ? language : undefined });
-      toast.success(`Voice summary ${isRegenerate ? "regenerated" : "generated"} in ${LANGUAGES.find(l => l.value === language)?.label || language}!`);
+      const result = await generateVoice({ reportId, userId, txnId, language });
+      // Capture the returned audio immediately
+      const newAudio = result?.voice_explanation?.audio_base64;
+      if (newAudio) {
+        setLocalAudio(newAudio);
+        setLocalLang(language);
+      }
+      const langLabel = LANGUAGES.find((l) => l.value === language)?.label || language;
+      toast.success(`Voice summary ${isRegenerate ? "regenerated" : "generated"} in ${langLabel}!`);
       if (onVoiceGenerated) onVoiceGenerated();
     } catch (error) {
       const message = error?.response?.data?.detail || "Failed to generate voice summary.";
@@ -53,14 +65,23 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
   if (!["SUCCESS", "COMPLETED"].includes(normalizedStatus)) return null;
 
   return (
-    <div className={`voice-section ${compact ? "" : ""}`}>
-      {hasVoice && <AudioPlayer base64={audioBase64} />}
+    <div className="voice-section">
+      {hasVoice && (
+        <div>
+          <AudioPlayer base64={audioBase64} key={audioBase64?.slice(-20)} />
+          {localLang && (
+            <p className="text-muted text-sm" style={{ marginTop: 4 }}>
+              Language: {LANGUAGES.find((l) => l.value === localLang)?.label || localLang}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="voice-controls">
         <div className="language-select-wrap">
-          <label htmlFor="voice-lang">Language:</label>
+          <label htmlFor={`voice-lang-${analysis.txn_id || "x"}`}>Language:</label>
           <select
-            id="voice-lang"
+            id={`voice-lang-${analysis.txn_id || "x"}`}
             className="form-select"
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
