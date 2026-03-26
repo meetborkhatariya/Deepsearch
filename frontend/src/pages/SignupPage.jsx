@@ -60,9 +60,10 @@ export default function SignupPage() {
       }
     >
       <form className="form-stack" onSubmit={onSubmit} noValidate>
-        <label>
-          Full Name
+        <div className="form-group">
+          <label className="form-label">Full Name</label>
           <input
+            className="form-input"
             type="text"
             name="name"
             value={form.name}
@@ -71,11 +72,12 @@ export default function SignupPage() {
             autoComplete="name"
             required
           />
-          {errors.name && <span className="error-text">{errors.name}</span>}
-        </label>
-        <label>
-          Email
+          {errors.name && <span className="form-error">{errors.name}</span>}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Email</label>
           <input
+            className="form-input"
             type="email"
             name="email"
             value={form.email}
@@ -84,11 +86,12 @@ export default function SignupPage() {
             autoComplete="email"
             required
           />
-          {errors.email && <span className="error-text">{errors.email}</span>}
-        </label>
-        <label>
-          Password
+          {errors.email && <span className="form-error">{errors.email}</span>}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Password</label>
           <input
+            className="form-input"
             type="password"
             name="password"
             value={form.password}
@@ -97,11 +100,12 @@ export default function SignupPage() {
             autoComplete="new-password"
             required
           />
-          {errors.password && <span className="error-text">{errors.password}</span>}
-        </label>
-        <label>
-          Confirm Password
+          {errors.password && <span className="form-error">{errors.password}</span>}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Confirm Password</label>
           <input
+            className="form-input"
             type="password"
             name="confirmPassword"
             value={form.confirmPassword}
@@ -110,9 +114,9 @@ export default function SignupPage() {
             autoComplete="new-password"
             required
           />
-          {errors.confirmPassword && <span className="error-text">{errors.confirmPassword}</span>}
-        </label>
-        <button className="primary-btn" type="submit" disabled={submitting}>
+          {errors.confirmPassword && <span className="form-error">{errors.confirmPassword}</span>}
+        </div>
+        <button className="btn btn-primary btn-lg" type="submit" disabled={submitting} style={{ width: "100%", marginTop: "0.5rem" }}>
           {submitting ? "Creating account..." : "Create account"}
         </button>
       </form>

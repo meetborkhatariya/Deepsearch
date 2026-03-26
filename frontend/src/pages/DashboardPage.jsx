@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
-import HealthRecordsTable from "../components/records/HealthRecordsTable";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import { useAuth } from "../hooks/useAuth";
 import { getUserTransactions } from "../services/reportService";
 import { formatDate, formatStatus } from "../utils/formatters";
-import VoiceSummaryButton from "../components/records/VoiceSummaryButton";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -14,13 +13,12 @@ export default function DashboardPage() {
 
   const loadDashboard = useCallback(async () => {
     if (!user?.id) return;
-
     setLoading(true);
     try {
       const response = await getUserTransactions(user.id, 50);
       setAnalyses(response.transactions || []);
     } catch (error) {
-      const message = error?.response?.data?.detail || "Could not load health records.";
+      const message = error?.response?.data?.detail || "Could not load dashboard data.";
       toast.error(message);
     } finally {
       setLoading(false);
@@ -31,51 +29,111 @@ export default function DashboardPage() {
     loadDashboard();
   }, [loadDashboard]);
 
-  if (loading) {
-    return <LoadingSpinner label="Loading your records..." />;
-  }
+  if (loading) return <LoadingSpinner label="Loading dashboard..." />;
 
-  const completedCount = analyses.filter((item) => (item.status || "").toUpperCase() === "COMPLETED").length;
-  const pendingCount = analyses.filter((item) => (item.status || "").toUpperCase() === "PENDING").length;
+  const completedCount = analyses.filter((a) => (a.status || "").toUpperCase() === "COMPLETED").length;
+  const pendingCount = analyses.filter((a) => (a.status || "").toUpperCase() === "PENDING").length;
+  const recentAnalyses = analyses.slice(0, 5);
 
   return (
-    <section className="stack-xl page-enter">
-      <div className="card hero-card dashboard-hero">
-        <div>
-          <h2>Welcome back, {user?.name || "Patient"}</h2>
-          <p>Your health insights are organized here with trend-ready records and voice support.</p>
+    <div className="stack-lg page-enter">
+      {/* Header */}
+      <div className="page-header">
+        <h2>Welcome back, {user?.name || "Patient"}</h2>
+        <p>Your health insights and report analysis overview.</p>
+      </div>
+
+      {/* Stats */}
+      <div className="stats-grid">
+        <div className="card stat-card">
+          <div className="stat-icon stat-icon-blue">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div className="stat-label">Total Reports</div>
+          <div className="stat-value">{analyses.length}</div>
+          <div className="stat-subtext">All uploaded reports</div>
         </div>
-        <button className="secondary-btn" onClick={loadDashboard}>Refresh Dashboard</button>
+        <div className="card stat-card">
+          <div className="stat-icon stat-icon-green">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div className="stat-label">Completed</div>
+          <div className="stat-value">{completedCount}</div>
+          <div className="stat-subtext">Analysis ready</div>
+        </div>
+        <div className="card stat-card">
+          <div className="stat-icon stat-icon-amber">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div className="stat-label">In Progress</div>
+          <div className="stat-value">{pendingCount}</div>
+          <div className="stat-subtext">Processing now</div>
+        </div>
       </div>
 
-      <div className="card-grid stats-grid">
-        <article className="card stat-card">
-          <h3>Total Reports</h3>
-          <strong>{analyses.length}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>Completed Analyses</h3>
-          <strong>{completedCount}</strong>
-        </article>
-        <article className="card stat-card">
-          <h3>In Progress</h3>
-          <strong>{pendingCount}</strong>
-        </article>
+      {/* Quick Actions */}
+      <div className="grid-2">
+        <Link to="/upload" className="card" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "1rem" }}>
+          <div className="stat-icon stat-icon-blue" style={{ flexShrink: 0 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div>
+            <h3 style={{ fontSize: "0.95rem" }}>Upload &amp; Analyze</h3>
+            <p style={{ fontSize: "0.82rem" }}>Run deep research on a new lab report</p>
+          </div>
+        </Link>
+        <Link to="/store" className="card" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "1rem" }}>
+          <div className="stat-icon stat-icon-green" style={{ flexShrink: 0 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div>
+            <h3 style={{ fontSize: "0.95rem" }}>Store Report</h3>
+            <p style={{ fontSize: "0.82rem" }}>Upload and save without deep research</p>
+          </div>
+        </Link>
       </div>
 
-      <div className="card-grid">
-        {analyses.map((analysis) => (
-          <article key={analysis.txn_id} className="card metric-card">
-            <h3>{analysis.parameter_name || analysis.report_id || "Lab Report"}</h3>
-            <p><strong>Status:</strong> {formatStatus(analysis.status)}</p>
-            <p><strong>Date:</strong> {formatDate(analysis.report_date || analysis.started_at)}</p>
-            {analysis.summary && <p className="line-clamp">{analysis.summary}</p>}
-            <VoiceSummaryButton analysis={analysis} onVoiceGenerated={loadDashboard} />
-          </article>
-        ))}
+      {/* Recent Activity */}
+      <div className="card">
+        <div className="card-header">
+          <h3>Recent Reports</h3>
+          <Link to="/records" className="btn btn-ghost btn-sm">View all</Link>
+        </div>
+        {recentAnalyses.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <h3>No reports yet</h3>
+            <p>Upload your first lab report to get started with AI-powered health insights.</p>
+          </div>
+        ) : (
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Report</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentAnalyses.map((a) => (
+                  <tr key={a.txn_id}>
+                    <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{a.parameter_name || a.report_id || "Lab Report"}</td>
+                    <td>
+                      <span className={`badge badge-${(a.status || "").toUpperCase() === "COMPLETED" ? "success" : (a.status || "").toUpperCase() === "FAILED" ? "danger" : "warning"}`}>
+                        {formatStatus(a.status)}
+                      </span>
+                    </td>
+                    <td>{formatDate(a.report_date || a.started_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-
-      <HealthRecordsTable analyses={analyses} />
-    </section>
+    </div>
   );
 }

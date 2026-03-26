@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
 import RecordsPage from "./pages/RecordsPage";
 import SignupPage from "./pages/SignupPage";
+import StorePage from "./pages/StorePage";
 import UploadPage from "./pages/UploadPage";
 
 function HomeRedirect() {
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/records" element={<RecordsPage />} />
             <Route path="/upload" element={<UploadPage />} />
+            <Route path="/store" element={<StorePage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Route>

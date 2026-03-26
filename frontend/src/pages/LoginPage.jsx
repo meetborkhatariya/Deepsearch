@@ -57,9 +57,10 @@ export default function LoginPage() {
       }
     >
       <form className="form-stack" onSubmit={onSubmit} noValidate>
-        <label>
-          Email
+        <div className="form-group">
+          <label className="form-label">Email</label>
           <input
+            className="form-input"
             type="email"
             name="email"
             value={form.email}
@@ -68,11 +69,12 @@ export default function LoginPage() {
             autoComplete="email"
             required
           />
-          {errors.email && <span className="error-text">{errors.email}</span>}
-        </label>
-        <label>
-          Password
+          {errors.email && <span className="form-error">{errors.email}</span>}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Password</label>
           <input
+            className="form-input"
             type="password"
             name="password"
             value={form.password}
@@ -81,9 +83,9 @@ export default function LoginPage() {
             autoComplete="current-password"
             required
           />
-          {errors.password && <span className="error-text">{errors.password}</span>}
-        </label>
-        <button className="primary-btn" type="submit" disabled={submitting}>
+          {errors.password && <span className="form-error">{errors.password}</span>}
+        </div>
+        <button className="btn btn-primary btn-lg" type="submit" disabled={submitting} style={{ width: "100%", marginTop: "0.5rem" }}>
           {submitting ? "Signing in..." : "Sign in"}
         </button>
       </form>
