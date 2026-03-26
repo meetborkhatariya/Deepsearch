@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import ReportModal from "../components/common/ReportModal";
 import { useAuth } from "../hooks/useAuth";
@@ -10,6 +10,7 @@ const POLLING_INTERVAL_MS = 4500;
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [statusData, setStatusData] = useState(null);
   const [analysisData, setAnalysisData] = useState(null);
@@ -100,7 +101,18 @@ export default function UploadPage() {
       setPreviewData(extracted);
       toast.info("Extraction preview ready.");
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Unable to extract PDF preview.");
+      const detail = error?.response?.data?.detail;
+      const status = error?.response?.status;
+      if (detail) {
+        toast.error(detail);
+      } else if (error?.code === "ECONNABORTED") {
+        toast.error("Extraction timed out — try a smaller PDF or check if the server is running.");
+      } else if (!error?.response) {
+        toast.error("Cannot reach the server. Please ensure the backend is running.");
+      } else {
+        toast.error(`Extraction failed (${status || "unknown error"}).`);
+      }
+      console.error("Preview extraction error:", error);
     } finally {
       setExtracting(false);
     }
@@ -132,7 +144,22 @@ export default function UploadPage() {
     setStatusData(null);
     setAnalysisData(null);
     setPolling(false);
+    setDragOver(false);
   };
+
+  const handleDragOver = useCallback((e) => { e.preventDefault(); setDragOver(true); }, []);
+  const handleDragLeave = useCallback((e) => { e.preventDefault(); setDragOver(false); }, []);
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    const err = validatePdfFile(file, 10);
+    if (err) { toast.error(err); return; }
+    setSelectedFile(file);
+    setPreviewData(null);
+    setStatusData(null);
+    setAnalysisData(null);
+  }, []);
 
   const fileSizeKb = selectedFile ? (selectedFile.size / 1024).toFixed(1) : 0;
 
@@ -151,6 +178,9 @@ export default function UploadPage() {
                 ? "Uploading and extracting parameters from your lab report."
                 : "Our AI is analyzing your report. This may take a minute."}
             </p>
+            <div className="progress-bar-track" style={{ marginTop: "1rem" }}>
+              <div className="progress-bar-fill animated" style={{ width: uploading ? "40%" : "75%" }} />
+            </div>
             {statusData?.txn_id && <p className="text-muted text-sm" style={{ marginTop: "0.75rem" }}>Transaction: {statusData.txn_id}</p>}
           </div>
         </div>
@@ -190,12 +220,17 @@ export default function UploadPage() {
         </div>
 
         {!selectedFile ? (
-          <div className="upload-zone">
+          <div
+            className={`upload-zone ${dragOver ? "drag-over" : ""}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <input type="file" accept="application/pdf,.pdf" onChange={handleSelectFile} aria-label="Upload medical report PDF" />
             <div className="upload-zone-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </div>
-            <h4>Drop your PDF here or click to browse</h4>
+            <h4>{dragOver ? "Drop your PDF here" : "Drop your PDF here or click to browse"}</h4>
             <p>Supports lab report PDFs up to 10 MB</p>
           </div>
         ) : (
@@ -239,7 +274,7 @@ export default function UploadPage() {
 
       {/* Extraction Preview */}
       {previewData && (
-        <div className="card">
+        <div className="card extraction-table-enter">
           <div className="card-header">
             <h3>Extracted Parameters</h3>
             <span className="badge badge-info">{previewRows.length} parameter{previewRows.length !== 1 ? "s" : ""} found</span>
@@ -271,7 +306,7 @@ export default function UploadPage() {
 
       {/* Analysis Results */}
       {analysisData?.summary && (
-        <div className="card">
+        <div className="card results-card analysis-reveal">
           <div className="card-header">
             <h3>Deep Research Results</h3>
             <div style={{ display: "flex", gap: "0.5rem" }}>

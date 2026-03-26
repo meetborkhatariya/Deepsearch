@@ -12,6 +12,7 @@ export default function RecordsPage() {
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [modalRecord, setModalRecord] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const loadRecords = useCallback(async () => {
     if (!user?.id) return;
@@ -39,6 +40,16 @@ export default function RecordsPage() {
     return "warning";
   };
 
+  const filteredRecords = records.filter((r) => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (r.parameter_name || "").toLowerCase().includes(term)
+      || (r.report_id || "").toLowerCase().includes(term)
+      || (r.summary || "").toLowerCase().includes(term);
+  });
+
+  const completedCount = records.filter((r) => ["COMPLETED", "SUCCESS"].includes((r.status || "").toUpperCase())).length;
+
   return (
     <div className="stack-lg page-enter">
       <div className="flex-between">
@@ -52,6 +63,25 @@ export default function RecordsPage() {
         </button>
       </div>
 
+      {/* Stats bar + Search */}
+      {records.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-md)", flexWrap: "wrap" }}>
+          <div className="search-bar" style={{ flex: 1, minWidth: 200 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              type="text"
+              placeholder="Search records..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div style={{ display: "flex", gap: "var(--space-sm)" }}>
+            <span className="badge badge-info">{records.length} total</span>
+            <span className="badge badge-success">{completedCount} completed</span>
+          </div>
+        </div>
+      )}
+
       {records.length === 0 ? (
         <div className="card">
           <div className="empty-state">
@@ -62,14 +92,27 @@ export default function RecordsPage() {
             <p>Upload your first lab report to start building your health record history.</p>
           </div>
         </div>
+      ) : filteredRecords.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <h3>No matching records</h3>
+            <p>Try a different search term.</p>
+          </div>
+        </div>
       ) : (
-        <div className="records-list">
-          {records.map((record) => (
-            <div className="card record-card" key={record.txn_id}>
-              <div className="record-card-header">
-                <h3>{record.parameter_name || record.report_id || "Lab Report"}</h3>
-                <span className={`badge badge-${statusBadge(record.status)}`}>{formatStatus(record.status)}</span>
-              </div>
+        <div className="records-list stagger-enter">
+          {filteredRecords.map((record) => {
+            const s = (record.status || "").toUpperCase();
+            const isPending = s === "PENDING";
+            return (
+              <div className="card record-card" key={record.txn_id}>
+                <div className="record-card-header">
+                  <h3>{record.parameter_name || record.report_id || "Lab Report"}</h3>
+                  <span className={`badge badge-${statusBadge(record.status)} ${isPending ? "badge-pulse" : ""}`}>
+                    {isPending && <span className="status-dot status-dot-warning" />}
+                    {formatStatus(record.status)}
+                  </span>
+                </div>
 
               {record.summary && (
                 <p className="line-clamp-2">{record.summary}</p>
@@ -99,7 +142,8 @@ export default function RecordsPage() {
 
               <VoiceSummaryButton analysis={record} onVoiceGenerated={loadRecords} compact />
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -10,7 +10,7 @@ export async function extractPdfToStructuredData(file, userId) {
   formData.append("file", file);
   if (userId) formData.append("user_id", userId);
   const { data } = await apiClient.post(PDF_TO_JSON_ENDPOINT, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
   });
   return data;
 }
@@ -23,7 +23,7 @@ export async function uploadPdfReport({ file, userId, language = "english", mode
   formData.append("model", model);
 
   const { data } = await apiClient.post(UPLOAD_REPORT_ENDPOINT, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
   });
 
   if (data?.txn_id && userId) {
