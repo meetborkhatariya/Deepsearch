@@ -1,8 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from open_deep_research.pdf_to_json import _normalise_result, _parse_llm_json
 
 
@@ -61,3 +56,38 @@ def test_normalise_result_builds_current_value_fallback_when_missing():
     assert cv["value"] == "220"
     assert cv["date"] == "2026-03-25"
     assert cv["unit"] == "mg/dL"
+
+
+def test_normalise_result_parses_dash_separated_report_date():
+    raw = {
+        "parameterName": "TSH",
+        "currentValue": "5.1",
+        "reportDate": "25-03-2026",
+        "linkedParameters": {},
+    }
+
+    result = _normalise_result(raw, user_id="u-date")
+
+    assert result["reportDate"] == "2026-03-25"
+
+
+def test_normalise_result_ignores_non_dict_linked_parameter_values():
+    raw = {
+        "parameterName": "CRP",
+        "currentValue": "9",
+        "reportDate": "2026-03-25",
+        "linkedParameters": {
+            "crp": "invalid",
+            "hba1c": {
+                "name": "HbA1c",
+                "normalRange": "4 - 5.6",
+                "currentValues": [{"value": "6.3", "date": "2026-03-25", "unit": "%"}],
+            },
+        },
+    }
+
+    result = _normalise_result(raw, user_id="u-linked")
+
+    assert "hba1c" in result["linkedParameters"]
+    assert "crp" in result["linkedParameters"]
+    assert result["linkedParameters"]["crp"]["name"] == "CRP"

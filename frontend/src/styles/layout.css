@@ -1,0 +1,144 @@
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 1.25rem;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.94), rgba(244, 253, 253, 0.92));
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #d7e9ea;
+}
+
+.brand-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #2ed3b7, #0686be);
+  box-shadow: 0 0 0 6px rgba(6, 134, 190, 0.14);
+}
+
+.top-nav {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.top-nav a {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text-main);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.top-nav a.active {
+  background: linear-gradient(120deg, #dff5f7, #dff5ea);
+  color: #095f73;
+}
+
+.user-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-chip {
+  background: #ecf9fb;
+  color: #0a6379;
+  border: 1px solid #cae8ef;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.page-shell {
+  width: min(1120px, 100% - 2rem);
+  margin: 1.4rem auto 2rem;
+}
+
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  width: min(560px, 100%);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(240, 251, 252, 0.96));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 1.6rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-brand-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.auth-brand-row h1 {
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+}
+
+.auth-subtitle {
+  font-size: 0.95rem;
+}
+
+.auth-footer,
+.auth-note {
+  font-size: 0.92rem;
+}
+
+.page-enter {
+  animation: pageFadeUp 0.4s ease-out;
+}
+
+@keyframes pageFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .top-nav {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .user-zone {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

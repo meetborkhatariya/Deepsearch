@@ -1,14 +1,17 @@
 from typing import Optional, Dict, List
-from fastapi import APIRouter, HTTPException, FastAPI
+from fastapi import APIRouter, HTTPException, FastAPI, Request, Response, UploadFile, File as FastAPIFile, Form, Query
 from fastapi.responses import JSONResponse
 from http import HTTPStatus
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 import asyncio
 import json
 import sqlite3
 import os
 import hashlib
+import hmac
+import secrets
+import base64
 from contextlib import contextmanager
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
@@ -51,6 +54,30 @@ from .pdf_to_json import extract_lab_json_from_pdf, extract_text_from_pdf
 
 # Use canonical DB path under app/db to avoid creating DB in project root
 DB_PATH = Path(__file__).resolve().parent / "db" / "deep_research_transactions.db"
+SESSION_COOKIE_NAME = "health_session"
+SESSION_TTL_DAYS = 7
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _generate_password_salt() -> str:
+    return secrets.token_hex(16)
+
+
+def _hash_password(password: str, salt: str) -> str:
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 150000)
+    return base64.b64encode(digest).decode("utf-8")
+
+
+def _verify_password(password: str, salt: str, stored_hash: str) -> bool:
+    candidate_hash = _hash_password(password, salt)
+    return hmac.compare_digest(candidate_hash, stored_hash)
+
+
+def _generate_session_token() -> str:
+    return secrets.token_urlsafe(48)
 
 @contextmanager
 def get_db_connection():
@@ -151,12 +178,145 @@ def init_transaction_db():
         # Verify record count
         cursor.execute("SELECT COUNT(*) FROM transactions")
         count = cursor.fetchone()[0]
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_login_at TEXT
+            )
+            """
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            """
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at)")
+        conn.commit()
         
     except Exception as e:
         conn.rollback()
         raise
     finally:
         conn.close()
+
+
+def _create_user(name: str, email: str, password: str) -> dict:
+    email_normalized = email.strip().lower()
+    now = _utc_now_iso()
+    user_id = str(uuid.uuid4())
+    salt = _generate_password_salt()
+    password_hash = _hash_password(password, salt)
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM users WHERE email = ?", (email_normalized,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+        cursor.execute(
+            """
+            INSERT INTO users (user_id, name, email, password_hash, password_salt, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, name.strip(), email_normalized, password_hash, salt, now, now),
+        )
+
+    return {"user_id": user_id, "name": name.strip(), "email": email_normalized}
+
+
+def _get_user_by_email(email: str) -> Optional[dict]:
+    email_normalized = email.strip().lower()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ? LIMIT 1", (email_normalized,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+def _get_user_by_id(user_id: str) -> Optional[dict]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE user_id = ? LIMIT 1", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+def _create_session(user_id: str) -> str:
+    token = _generate_session_token()
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(days=SESSION_TTL_DAYS)).isoformat()
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO auth_sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token, user_id, now.isoformat(), expires_at),
+        )
+    return token
+
+
+def _delete_session(token: str) -> None:
+    if not token:
+        return
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+
+
+def _extract_bearer_token(request: Request) -> Optional[str]:
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header.replace("Bearer ", "", 1).strip()
+    return None
+
+
+def _resolve_session_token(request: Request) -> Optional[str]:
+    return _extract_bearer_token(request) or request.cookies.get(SESSION_COOKIE_NAME)
+
+
+def _get_session_user(request: Request) -> Optional[dict]:
+    token = _resolve_session_token(request)
+    if not token:
+        return None
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM auth_sessions WHERE token = ? LIMIT 1", (token,))
+        session_row = cursor.fetchone()
+        if not session_row:
+            return None
+
+        expires_at = session_row["expires_at"]
+        if expires_at < _utc_now_iso():
+            cursor.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+            return None
+
+        cursor.execute("SELECT user_id, name, email FROM users WHERE user_id = ? LIMIT 1", (session_row["user_id"],))
+        user_row = cursor.fetchone()
+        if not user_row:
+            return None
+        return dict(user_row)
         
 def save_transaction_to_db(txn_data: dict):
     """Save or update transaction in SQLite"""
@@ -372,6 +532,105 @@ class LabParameterSchema(BaseModel):
                     "'all' = OpenAI + KB + Tavily (supervisor: OpenAI), "
                     "'openai' = OpenAI + Tavily (default)"
     )
+
+
+class SignupRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/auth/signup")
+async def signup(request: SignupRequest, response: Response):
+    if not request.name or len(request.name.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Name must be at least 2 characters.")
+    if not request.email or "@" not in request.email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+    if not request.password or len(request.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+
+    user = _create_user(request.name, request.email, request.password)
+    token = _create_session(user["user_id"])
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=SESSION_TTL_DAYS * 24 * 60 * 60,
+    )
+
+    return {
+        "status": "success",
+        "token": token,
+        "user": {
+            "id": user["user_id"],
+            "name": user["name"],
+            "email": user["email"],
+        },
+    }
+
+
+@router.post("/auth/login")
+async def login(request: LoginRequest, response: Response):
+    user = _get_user_by_email(request.email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    if not _verify_password(request.password, user["password_salt"], user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = _create_session(user["user_id"])
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET last_login_at = ?, updated_at = ? WHERE user_id = ?", (_utc_now_iso(), _utc_now_iso(), user["user_id"]))
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=SESSION_TTL_DAYS * 24 * 60 * 60,
+    )
+
+    return {
+        "status": "success",
+        "token": token,
+        "user": {
+            "id": user["user_id"],
+            "name": user["name"],
+            "email": user["email"],
+        },
+    }
+
+
+@router.get("/auth/me")
+async def auth_me(request: Request):
+    user = _get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {
+        "status": "success",
+        "user": {
+            "id": user["user_id"],
+            "name": user["name"],
+            "email": user["email"],
+        },
+    }
+
+
+@router.post("/auth/logout")
+async def auth_logout(request: Request, response: Response):
+    token = _resolve_session_token(request)
+    _delete_session(token or "")
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return {"status": "success", "message": "Logged out"}
 
 class TokenTracker:
     def __init__(self):
@@ -693,7 +952,38 @@ async def get_report_status(txn_id: str):
             }
         }
 
-from fastapi import UploadFile, File as FastAPIFile, Form, Query
+
+@router.get("/users/{user_id}/transactions")
+async def list_user_transactions(user_id: str, request: Request, limit: int = Query(default=50, ge=1, le=200)):
+    session_user = _get_session_user(request)
+    if session_user and session_user.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden for this user account")
+
+    transactions = get_user_transactions(user_id=user_id, limit=limit)
+    payload = []
+    for txn in transactions:
+        result = txn.get("result") or {}
+        payload.append(
+            {
+                "txn_id": txn.get("txn_id"),
+                "report_id": txn.get("report_id"),
+                "status": txn.get("status"),
+                "started_at": txn.get("started_at"),
+                "completed_at": txn.get("completed_at"),
+                "parameter_name": txn.get("lab_parameter"),
+                "summary": result.get("summary"),
+                "full_analysis": result.get("final_result"),
+                "structured_summary": result.get("structured_summary"),
+                "voice_explanation": result.get("voice_explanation"),
+                "report_date": result.get("report_date"),
+            }
+        )
+
+    return {
+        "status": "success",
+        "count": len(payload),
+        "transactions": payload,
+    }
 
 # ---- PDF-to-JSON Endpoints ----
 
@@ -2180,7 +2470,8 @@ async def delete_report_by_transaction(txn_id: str):
 class GenerateVoiceRequest(BaseModel):
     """Request model for generating or regenerating voice"""
     user_id: str = Field(..., description="User ID who owns the report")
-    report_id: str = Field(..., description="Report ID to generate voice for")
+    report_id: Optional[str] = Field(None, description="Report ID to generate voice for")
+    txn_id: Optional[str] = Field(None, description="Transaction ID to generate voice for when report_id is unavailable")
     language: Optional[str] = Field(None, description="Language for voice generation (english, hindi, gujarati, marathi, malayalam, kannada, tamil, bangla). If not provided, uses language from deep research.")
 
 
@@ -2250,27 +2541,38 @@ async def report_check_for_voice(request: ReportCheckRequest):
 async def generate_voice(request: GenerateVoiceRequest):
 
     try:
-        # Get transaction by report_id and user_id
-        transaction = get_transaction_by_report_id(request.report_id, request.user_id)
+        if not request.report_id and not request.txn_id:
+            raise HTTPException(status_code=400, detail="Either report_id or txn_id is required")
+
+        transaction = None
+        lookup_key = None
+
+        if request.report_id:
+            transaction = get_transaction_by_report_id(request.report_id, request.user_id)
+            lookup_key = request.report_id
+
+        if not transaction and request.txn_id:
+            transaction = get_transaction_from_db(request.txn_id)
+            lookup_key = request.txn_id
         
         if not transaction:
             raise HTTPException(
                 status_code=404,
-                detail=f"Report with report_id '{request.report_id}' not found for user {request.user_id}"
+                detail=f"Report not found for key '{lookup_key}' and user {request.user_id}"
             )
         
         # Verify user_id matches (redundant now but kept for safety)
         if transaction["user_id"] != request.user_id:
             raise HTTPException(
                 status_code=403,
-                detail=f"Report {request.report_id} does not belong to user {request.user_id}"
+                detail=f"Requested report does not belong to user {request.user_id}"
             )
         
         # Check if transaction has completed successfully
         if transaction["status"] != "COMPLETED":
             raise HTTPException(
                 status_code=400,
-                detail=f"Report {request.report_id} has status '{transaction['status']}'. Only completed reports can generate voice."
+                detail=f"Report has status '{transaction['status']}'. Only completed reports can generate voice."
             )
         
         result = transaction.get("result")
@@ -2325,7 +2627,8 @@ async def generate_voice(request: GenerateVoiceRequest):
             )
         
         # Generate voice with determined language
-        print(f"🎙️ {action} voice for report {request.report_id} in {language.upper()}...")
+        report_identifier = transaction.get("report_id") or request.report_id or request.txn_id
+        print(f"🎙️ {action} voice for report {report_identifier} in {language.upper()}...")
         
         voice_explanation = await generate_health_voice_insight(
             full_analysis=final_result,
@@ -2377,7 +2680,7 @@ async def generate_voice(request: GenerateVoiceRequest):
         voice_total_cost_usd = voice_script_cost_usd + sarvam_tts_cost_usd
         voice_total_cost_inr = voice_total_cost_usd * 88
         
-        print(f"✅ Voice {action_past} successfully for report {request.report_id} in {language.upper()}")
+        print(f"✅ Voice {action_past} successfully for report {report_identifier} in {language.upper()}")
         _voice_action = "regeneration" if is_regeneration else "generation"
         print(f"💰 Voice {_voice_action} cost: ${voice_total_cost_usd:.6f} (₹{voice_total_cost_inr:.4f})")
         
@@ -2387,7 +2690,7 @@ async def generate_voice(request: GenerateVoiceRequest):
                 "message": f"Voice {action_past} in {language.upper()}",
                 "mode": "regeneration" if is_regeneration else "generation",
                 "user_id": request.user_id,
-                "report_id": request.report_id,
+                "report_id": transaction.get("report_id") or request.report_id,
                 "txn_id": transaction["txn_id"],
                 "language": language,
                 "voice_explanation": voice_explanation,
@@ -2410,7 +2713,7 @@ async def generate_voice(request: GenerateVoiceRequest):
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"❌ Error generating voice for report_id {request.report_id}: {e}")
+        print(f"❌ Error generating voice for request (report_id={request.report_id}, txn_id={request.txn_id}): {e}")
         print(error_details)
         
         raise HTTPException(

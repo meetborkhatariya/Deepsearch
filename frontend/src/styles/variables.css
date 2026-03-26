@@ -1,0 +1,18 @@
+:root {
+  --bg-main: #f2f8f8;
+  --bg-aurora-1: #e3f5ff;
+  --bg-aurora-2: #daf6ec;
+  --surface: #ffffff;
+  --surface-soft: #f7fbfb;
+  --text-main: #133038;
+  --text-subtle: #4d6a72;
+  --line: #d3e6e8;
+  --primary: #0a8eb0;
+  --primary-strong: #007a96;
+  --success: #11926f;
+  --danger: #cb3f56;
+  --shadow-soft: 0 12px 30px rgba(9, 66, 87, 0.09);
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+}
