@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import AuthLayout from "../components/layout/AuthLayout";
 import { useAuth } from "../hooks/useAuth";
+import { useLanguage } from "../context/LanguageContext";
 import { validateEmail } from "../utils/validators";
 
 export default function LoginPage() {
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
+  const { t, language, setLanguage, languages } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -49,17 +51,35 @@ export default function LoginPage() {
 
   return (
     <AuthLayout
-      title="Welcome back"
-      subtitle="Sign in to securely manage your report analyses and health records."
+      title={t("welcome_back")}
+      subtitle={t("sign_in_subtitle")}
       footerAction={
         <>
-          New patient? <Link to="/signup">Create an account</Link>
+          {t("new_patient")} <Link to="/signup">{t("sign_up_link")}</Link>
         </>
+      }
+      languageSelector={
+        <div className="auth-language-selector">
+          <label className="form-label" style={{ marginBottom: 4, fontSize: "0.78rem" }}>{t("language")}</label>
+          <div className="language-pills">
+            {languages.map((lang) => (
+              <button
+                key={lang.value}
+                type="button"
+                className={`language-pill ${language === lang.value ? "active" : ""}`}
+                onClick={() => setLanguage(lang.value)}
+              >
+                <span className="language-pill-flag">{lang.flag}</span>
+                {lang.label}
+              </button>
+            ))}
+          </div>
+        </div>
       }
     >
       <form className="form-stack" onSubmit={onSubmit} noValidate>
         <div className="form-group">
-          <label className="form-label">Email</label>
+          <label className="form-label">{t("email")}</label>
           <input
             className="form-input"
             type="email"
@@ -73,7 +93,7 @@ export default function LoginPage() {
           {errors.email && <span className="form-error">{errors.email}</span>}
         </div>
         <div className="form-group">
-          <label className="form-label">Password</label>
+          <label className="form-label">{t("password")}</label>
           <div style={{ position: "relative" }}>
             <input
               className="form-input"
@@ -95,7 +115,7 @@ export default function LoginPage() {
                 padding: "0.25rem", display: "grid", placeItems: "center"
               }}
               tabIndex={-1}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={showPassword ? t("hide_password") : t("show_password")}
             >
               {showPassword ? (
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -108,8 +128,8 @@ export default function LoginPage() {
         </div>
         <button className="btn btn-primary btn-lg" type="submit" disabled={submitting} style={{ width: "100%", marginTop: "0.5rem" }}>
           {submitting ? (
-            <><span className="spinner spinner-sm" style={{ display: "inline-block" }} /> Signing in...</>
-          ) : "Sign in"}
+            <><span className="spinner spinner-sm" style={{ display: "inline-block" }} /> {t("signing_in")}</>
+          ) : t("sign_in")}
         </button>
       </form>
     </AuthLayout>

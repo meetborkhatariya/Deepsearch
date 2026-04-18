@@ -14,9 +14,9 @@ SARVAM_API_KEY   - optional; if absent, audio is skipped and only the script is 
 
 Sarvam AI voice codes used
 --------------------------
-english  → meera (en-IN)
-hindi    → meera (hi-IN)
-gujarati → meera (gu-IN)
+english  → anushka (en-IN)
+hindi    → anushka (hi-IN)
+gujarati → anushka (gu-IN)
 """
 
 import os
@@ -31,42 +31,42 @@ from typing import Any, Dict, Optional
 _LANGUAGE_CONFIG: Dict[str, Dict[str, str]] = {
     "english": {
         "code": "en-IN",
-        "voice": "amelia",  # Female English speaker
+        "voice": "anushka",  # confirmed valid speaker for bulbul:v2
         "instruction": "Write in clear, simple English.",
     },
     "hindi": {
         "code": "hi-IN",
-        "voice": "kavya",  # Female Hindi speaker
+        "voice": "anushka",  # anushka is multilingual, supports Hindi
         "instruction": "Write entirely in Hindi (Devanagari script). Use simple, everyday Hindi.",
     },
     "gujarati": {
         "code": "gu-IN",
-        "voice": "manisha",  # Female Gujarati speaker
+        "voice": "anushka",  # confirmed valid: bulbul:v2 + anushka + gu-IN
         "instruction": "Write entirely in Gujarati (Gujarati script). Use simple, everyday Gujarati.",
     },
     "marathi": {
         "code": "mr-IN",
-        "voice": "varun",  # Marathi speaker
+        "voice": "anushka",  # anushka is multilingual, supports Marathi
         "instruction": "Write entirely in Marathi (Devanagari script). Use simple, everyday Marathi.",
     },
     "malayalam": {
         "code": "ml-IN",
-        "voice": "vidya",  # Malayalam speaker
+        "voice": "anushka",  # anushka is multilingual, supports Malayalam
         "instruction": "Write entirely in Malayalam. Use simple, everyday Malayalam.",
     },
     "kannada": {
         "code": "kn-IN",
-        "voice": "anand",  # Kannada speaker
+        "voice": "anushka",  # anushka is multilingual, supports Kannada
         "instruction": "Write entirely in Kannada. Use simple, everyday Kannada.",
     },
     "tamil": {
         "code": "ta-IN",
-        "voice": "tanya",  # Tamil speaker
+        "voice": "anushka",  # anushka is multilingual, supports Tamil
         "instruction": "Write entirely in Tamil. Use simple, everyday Tamil.",
     },
     "bangla": {
         "code": "bn-IN",
-        "voice": "neha",  # Bangla speaker
+        "voice": "anushka",  # anushka is multilingual, supports Bengali
         "instruction": "Write entirely in Bangla (Bengali script). Use simple, everyday Bangla.",
     },
 }
@@ -163,10 +163,10 @@ async def _sarvam_tts(script: str, language: str) -> Optional[str]:
                 "inputs": [chunk],
                 "target_language_code": lang_cfg["code"],
                 "speaker": lang_cfg["voice"],
-                "pace": 1.0,
+                "pace": 1.15,
                 "speech_sample_rate": 22050,
                 "enable_preprocessing": True,
-                "model": "bulbul:v3",  # Updated to latest model (pitch/loudness not supported)
+                "model": "bulbul:v2",
             }
             try:
                 resp = await http.post(
@@ -177,6 +177,8 @@ async def _sarvam_tts(script: str, language: str) -> Optional[str]:
                         "Content-Type": "application/json",
                     },
                 )
+                if not resp.is_success:
+                    print(f"[VoiceService] Sarvam TTS error {resp.status_code}: {resp.text[:300]}")
                 resp.raise_for_status()
                 data = resp.json()
                 audios = data.get("audios", [])
@@ -189,9 +191,33 @@ async def _sarvam_tts(script: str, language: str) -> Optional[str]:
     if not audio_parts:
         return None
 
-    # Concatenate base64 chunks (each is raw WAV base64)
-    # For simplicity return the first chunk; frontend can stitch if needed
-    return audio_parts[0] if len(audio_parts) == 1 else audio_parts[0]
+    if len(audio_parts) == 1:
+        return audio_parts[0]
+
+    # Concatenate multiple WAV base64 chunks into a single WAV
+    # Each chunk is a full WAV file; we need to strip headers from subsequent chunks
+    import io
+    import wave
+
+    combined = io.BytesIO()
+    writer = None
+    for idx, b64_chunk in enumerate(audio_parts):
+        raw = base64.b64decode(b64_chunk)
+        buf = io.BytesIO(raw)
+        try:
+            reader = wave.open(buf, "rb")
+        except Exception:
+            continue
+        if writer is None:
+            writer = wave.open(combined, "wb")
+            writer.setnchannels(reader.getnchannels())
+            writer.setsampwidth(reader.getsampwidth())
+            writer.setframerate(reader.getframerate())
+        writer.writeframes(reader.readframes(reader.getnframes()))
+        reader.close()
+    if writer:
+        writer.close()
+    return base64.b64encode(combined.getvalue()).decode("utf-8")
 
 
 # ---------------------------------------------------------------------------

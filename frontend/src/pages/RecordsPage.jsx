@@ -14,16 +14,16 @@ export default function RecordsPage() {
   const [modalRecord, setModalRecord] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const loadRecords = useCallback(async () => {
+  const loadRecords = useCallback(async (showSpinner = true) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (showSpinner) setLoading(true);
     try {
       const response = await getUserTransactions(user.id, 100);
       setRecords(response.transactions || []);
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Unable to load health records.");
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, [user?.id]);
 
@@ -140,7 +140,7 @@ export default function RecordsPage() {
                 )}
               </div>
 
-              <VoiceSummaryButton analysis={record} onVoiceGenerated={loadRecords} compact />
+              <VoiceSummaryButton analysis={record} onVoiceGenerated={() => loadRecords(false)} />
             </div>
             );
           })}

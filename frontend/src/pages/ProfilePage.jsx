@@ -148,7 +148,6 @@ export default function ProfilePage() {
     { id: "personal", label: "Personal Details", icon: "heart" },
     { id: "health", label: "Health Info", icon: "activity" },
     { id: "goals", label: "Goals", icon: "target" },
-    { id: "security", label: "Security", icon: "lock" },
   ];
 
   const tabIcons = {
@@ -163,9 +162,6 @@ export default function ProfilePage() {
     ),
     target: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-    ),
-    lock: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
     ),
   };
 
@@ -419,26 +415,6 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* ── Security Tab ── */}
-          {activeTab === "security" && (
-            <div className="card profile-section-card">
-              <h3>Security Settings</h3>
-              <div className="profile-field">
-                <div className="profile-field-label">Password</div>
-                <div className="profile-field-value">
-                  ••••••••
-                  <p className="text-muted text-sm" style={{ marginTop: 4 }}>Password change functionality coming soon.</p>
-                </div>
-              </div>
-              <div className="profile-field">
-                <div className="profile-field-label">Sessions</div>
-                <div className="profile-field-value">
-                  <span className="badge badge-success">Active</span>
-                  <p className="text-muted text-sm" style={{ marginTop: 4 }}>Your current session is active and secure.</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

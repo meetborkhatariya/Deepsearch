@@ -4,9 +4,16 @@ import ReportModal from "../components/common/ReportModal";
 import { useAuth } from "../hooks/useAuth";
 import { extractPdfToStructuredData, getReportStatus, uploadPdfReport } from "../services/reportService";
 import { validatePdfFile } from "../utils/validators";
+import { checkAbnormal } from "../utils/formatters";
 import VoiceSummaryButton from "../components/records/VoiceSummaryButton";
 
 const POLLING_INTERVAL_MS = 4500;
+
+const RESEARCH_LANGUAGES = [
+  { value: "english", label: "English" },
+  { value: "hindi", label: "Hindi" },
+  { value: "gujarati", label: "Gujarati" },
+];
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -18,6 +25,7 @@ export default function UploadPage() {
   const [extracting, setExtracting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [researchLanguage, setResearchLanguage] = useState("english");
   const { user } = useAuth();
 
   const userId = useMemo(() => user?.id || "guest-user", [user]);
@@ -25,19 +33,39 @@ export default function UploadPage() {
   const previewRows = useMemo(() => {
     if (!previewData) return [];
     const rows = [];
+
+    // Handle lab_parameters array format (from pdf_to_lab_json)
+    const labParams = previewData.lab_parameters || previewData.parameters;
+    if (Array.isArray(labParams) && labParams.length > 0) {
+      labParams.forEach((p) => {
+        rows.push({
+          name: p.parameter_name || p.name || "Parameter",
+          value: p.value ?? "-",
+          unit: p.unit || "-",
+          ref: p.bio_ref_range || p.reference_range || "-",
+          date: p.date || previewData.reportDate || "-",
+        });
+      });
+      return rows;
+    }
+
+    // Handle single parameter format
     if (previewData.parameterName || previewData.currentValue) {
       rows.push({
         name: previewData.parameterName || "Primary Parameter",
         value: previewData.currentValue || "-",
         unit: "-",
+        ref: "-",
         date: previewData.reportDate || "-",
       });
     }
+
+    // Handle linkedParameters object format
     const linked = previewData.linkedParameters || {};
     Object.entries(linked).forEach(([key, parameter]) => {
       const currentValues = parameter?.currentValues || [];
       if (!currentValues.length) {
-        rows.push({ name: parameter?.name || key, value: "-", unit: "-", date: previewData.reportDate || "-" });
+        rows.push({ name: parameter?.name || key, value: "-", unit: "-", ref: "-", date: previewData.reportDate || "-" });
         return;
       }
       currentValues.forEach((entry) => {
@@ -45,6 +73,7 @@ export default function UploadPage() {
           name: parameter?.name || key,
           value: entry?.value || "-",
           unit: entry?.unit || "-",
+          ref: parameter?.normalRange || "-",
           date: entry?.date || previewData.reportDate || "-",
         });
       });
@@ -122,7 +151,7 @@ export default function UploadPage() {
     if (!selectedFile) { toast.error("Choose a PDF file first."); return; }
     setUploading(true);
     try {
-      const response = await uploadPdfReport({ file: selectedFile, userId });
+      const response = await uploadPdfReport({ file: selectedFile, userId, language: researchLanguage });
       setStatusData(response);
       if (response.status === "PENDING") {
         setPolling(true);
@@ -176,12 +205,16 @@ export default function UploadPage() {
             <p style={{ marginTop: "0.5rem" }}>
               {uploading
                 ? "Uploading and extracting parameters from your lab report."
-                : "Our AI is analyzing your report. This may take a minute."}
+                : "Our AI is performing deep research and web search to provide you with comprehensive, detailed health insights. This may take a few minutes — please be patient."}
             </p>
             <div className="progress-bar-track" style={{ marginTop: "1rem" }}>
               <div className="progress-bar-fill animated" style={{ width: uploading ? "40%" : "75%" }} />
             </div>
-            {statusData?.txn_id && <p className="text-muted text-sm" style={{ marginTop: "0.75rem" }}>Transaction: {statusData.txn_id}</p>}
+            {!uploading && (
+              <p className="text-muted text-sm" style={{ marginTop: "0.75rem", fontStyle: "italic" }}>
+                Analyzing parameters, searching medical databases, and generating your personalized report...
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -246,17 +279,31 @@ export default function UploadPage() {
               <span className="badge badge-success">Ready</span>
             </div>
 
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
               <button className="btn btn-secondary" onClick={handlePreview} disabled={extracting}>
                 {extracting ? (
                   <><span className="spinner spinner-sm" style={{ display: "inline-block" }} /> Extracting...</>
                 ) : (
                   <>
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    Preview Data
+                    Extract &amp; Preview
                   </>
                 )}
               </button>
+              <div className="language-select-wrap">
+                <label htmlFor="research-lang" style={{ fontSize: "0.78rem" }}>Report Language:</label>
+                <select
+                  id="research-lang"
+                  className="form-select"
+                  value={researchLanguage}
+                  onChange={(e) => setResearchLanguage(e.target.value)}
+                  style={{ minWidth: 120, padding: "0.4rem 2rem 0.4rem 0.6rem", fontSize: "0.82rem" }}
+                >
+                  {RESEARCH_LANGUAGES.map((l) => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
               <button className="btn btn-primary" onClick={handleUpload} disabled={uploading}>
                 {uploading ? (
                   <><span className="spinner spinner-sm" style={{ display: "inline-block" }} /> Uploading...</>
@@ -286,18 +333,26 @@ export default function UploadPage() {
                   <th>Parameter</th>
                   <th>Value</th>
                   <th>Unit</th>
+                  <th>Reference</th>
                   <th>Date</th>
                 </tr>
               </thead>
               <tbody>
-                {previewRows.map((row, i) => (
-                  <tr key={`${row.name}-${i}`}>
-                    <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{row.name}</td>
-                    <td>{row.value}</td>
+                {previewRows.map((row, i) => {
+                  const abnormal = checkAbnormal(row.value, row.ref);
+                  return (
+                  <tr key={`${row.name}-${i}`} className={abnormal ? "param-abnormal" : ""}>
+                    <td style={{ fontWeight: 600, color: abnormal ? "var(--danger)" : "var(--text-primary)" }}>
+                      {row.name}
+                      {abnormal && <span className="abnormal-badge">{abnormal === "high" ? "↑ HIGH" : "↓ LOW"}</span>}
+                    </td>
+                    <td><strong style={abnormal ? { color: "var(--danger)" } : undefined}>{row.value}</strong></td>
                     <td>{row.unit}</td>
+                    <td>{row.ref || "-"}</td>
                     <td>{row.date}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

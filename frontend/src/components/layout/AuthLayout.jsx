@@ -1,7 +1,12 @@
-export default function AuthLayout({ title, subtitle, children, footerAction }) {
+export default function AuthLayout({ title, subtitle, children, footerAction, languageSelector }) {
   return (
     <main className="auth-screen">
       <div className="auth-container">
+        {languageSelector && (
+          <div style={{ marginBottom: "var(--space-md)" }}>
+            {languageSelector}
+          </div>
+        )}
         <div className="auth-card">
           <div className="auth-header">
             <div className="auth-logo">

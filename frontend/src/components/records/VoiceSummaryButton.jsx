@@ -15,19 +15,28 @@ const LANGUAGES = [
   { value: "bangla", label: "Bengali" },
 ];
 
-export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact = false }) {
+export default function VoiceSummaryButton({ analysis, onVoiceGenerated }) {
   const { user } = useAuth();
   const [generating, setGenerating] = useState(false);
   const [language, setLanguage] = useState("english");
-  // Local audio state so we show the player immediately after generation
+  // Local state so we show results immediately after generation
   const [localAudio, setLocalAudio] = useState(null);
+  const [localScript, setLocalScript] = useState(null);
   const [localLang, setLocalLang] = useState(null);
+  // Key to force AudioPlayer remount on new audio
+  const [audioKey, setAudioKey] = useState(0);
 
   const voiceExplanation = analysis?.voice_explanation;
   const propsAudio = voiceExplanation?.audio_base64;
-  // Prefer local audio (freshly generated) over props (stale until parent re-fetches)
+  const propsScript = voiceExplanation?.voice_agent_script;
+  // Prefer local (freshly generated) over props (stale until parent re-fetches)
   const audioBase64 = localAudio || propsAudio;
+  const voiceScript = localScript || propsScript;
   const hasVoice = !!audioBase64;
+  const hasVoiceData = hasVoice || !!voiceScript;
+
+  // Displayed language: local overrides props
+  const displayedLang = localLang || voiceExplanation?.language || null;
 
   const handleGenerate = async (isRegenerate = false) => {
     const reportId = analysis.reportId || analysis.report_id;
@@ -44,14 +53,24 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
     setGenerating(true);
     try {
       const result = await generateVoice({ reportId, userId, txnId, language });
-      // Capture the returned audio immediately
-      const newAudio = result?.voice_explanation?.audio_base64;
-      if (newAudio) {
-        setLocalAudio(newAudio);
-        setLocalLang(language);
-      }
+      const ve = result?.voice_explanation || {};
+      const newAudio = ve.audio_base64 || result?.audio_base64;
+      const newScript = ve.voice_agent_script || result?.voice_agent_script;
+
+      // Always update language and bump key so UI reflects the generation
+      setLocalLang(language);
+      setAudioKey((k) => k + 1);
+      if (newAudio) setLocalAudio(newAudio);
+      if (newScript) setLocalScript(newScript);
+
       const langLabel = LANGUAGES.find((l) => l.value === language)?.label || language;
-      toast.success(`Voice summary ${isRegenerate ? "regenerated" : "generated"} in ${langLabel}!`);
+      if (newAudio) {
+        toast.success(`Voice summary ${isRegenerate ? "regenerated" : "generated"} in ${langLabel}!`);
+      } else if (newScript) {
+        toast.success(`Voice script generated in ${langLabel} (audio unavailable).`);
+      } else {
+        toast.warning("Voice generation completed but no audio was returned.");
+      }
       if (onVoiceGenerated) onVoiceGenerated();
     } catch (error) {
       const message = error?.response?.data?.detail || "Failed to generate voice summary.";
@@ -68,12 +87,20 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
     <div className="voice-section">
       {hasVoice && (
         <div>
-          <AudioPlayer base64={audioBase64} key={audioBase64?.slice(-20)} />
-          {localLang && (
+          <AudioPlayer base64={audioBase64} key={`audio-${audioKey}-${(audioBase64 || "").slice(-20)}`} />
+          {displayedLang && (
             <p className="text-muted text-sm" style={{ marginTop: 4 }}>
-              Language: {LANGUAGES.find((l) => l.value === localLang)?.label || localLang}
+              Language: {LANGUAGES.find((l) => l.value === displayedLang)?.label || displayedLang}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Show script text when audio is not available but script exists */}
+      {!hasVoice && voiceScript && (
+        <div style={{ padding: "0.65rem 0.85rem", background: "var(--warning-light)", borderRadius: "var(--radius-md)", fontSize: "0.82rem", color: "#92400e", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Audio generation failed — try regenerating with the same language.
         </div>
       )}
 
@@ -93,7 +120,7 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
           </select>
         </div>
 
-        {hasVoice ? (
+        {hasVoiceData ? (
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => handleGenerate(true)}
@@ -105,7 +132,10 @@ export default function VoiceSummaryButton({ analysis, onVoiceGenerated, compact
                 Regenerating...
               </>
             ) : (
-              "Regenerate Voice"
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                Regenerate Voice
+              </>
             )}
           </button>
         ) : (
