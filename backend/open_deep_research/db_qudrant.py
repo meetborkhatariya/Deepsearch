@@ -1,40 +1,46 @@
-"""Fixed Qdrant database with correct filter syntax and text-embedding-3-small only"""
+"""Fixed Qdrant database with correct filter syntax and HuggingFace all-MiniLM-L6-v2 embeddings"""
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, PointIdsList
-from openai import OpenAI
+from sentence_transformers import SentenceTransformer
 import uuid
 from datetime import datetime
 from typing import List, Dict, Optional
 import json
 import os
+import hashlib
+import random
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Lazy OpenAI client — created on first use so import never fails if key not yet set
-_openai_client: Optional[OpenAI] = None
+# Lazy HuggingFace embedding model — loaded on first use
+_hf_model: Optional[SentenceTransformer] = None
 
 
-def _get_openai_client() -> OpenAI:
-    global _openai_client
-    if _openai_client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set. Add it to your .env file."
-            )
-        _openai_client = OpenAI(api_key=api_key)
-    return _openai_client
+def _get_hf_model() -> SentenceTransformer:
+    global _hf_model
+    if _hf_model is None:
+        print("Loading HuggingFace embedding model (all-MiniLM-L6-v2)...")
+        _hf_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return _hf_model
+
+
+def _local_embedding(text: str, dims: int = 1536) -> List[float]:
+    """Deterministic local fallback embedding to avoid hard API-key dependency."""
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    seed = int.from_bytes(digest[:8], "big", signed=False)
+    rng = random.Random(seed)
+    return [rng.uniform(-1.0, 1.0) for _ in range(dims)]
 
 
 client = QdrantClient(host="localhost", port=6333)
 
 COLLECTION_NAME = "user_summaries_v2"
 
-# Use ONLY text-embedding-3-small (most cost-effective)
-EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSIONS = 1536
+# Use HuggingFace all-MiniLM-L6-v2 (free, local, 384-dim)
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
 
 # Auto-initialize collection on module import (will create if doesn't exist)
 try:
@@ -47,34 +53,30 @@ except Exception as e:
 
 def get_embedding(text: str) -> List[float]:
     """
-    Generate embedding using OpenAI's text-embedding-3-small model.
-    
+    Generate embedding using HuggingFace all-MiniLM-L6-v2 model (384-dim, local, free).
+
     Args:
         text: Text to embed
-        
+
     Returns:
-        List of floats representing the embedding vector (1536 dimensions)
+        List of floats representing the embedding vector (384 dimensions)
     """
     try:
         # Clean the text
         text = text.replace("\n", " ").strip()
-        
-        # Truncate if too long (max 8191 tokens)
+
+        # Truncate if too long
         if len(text) > 8000:
             text = text[:8000]
-        
+
         # Handle empty text
         if not text or len(text.strip()) == 0:
             text = "Empty medical report"
-        
-        # Generate embedding using text-embedding-3-small
-        response = _get_openai_client().embeddings.create(
-            input=text,
-            model=EMBEDDING_MODEL
-        )
-        
-        return response.data[0].embedding
-        
+
+        model = _get_hf_model()
+        embedding = model.encode(text, convert_to_numpy=True).tolist()
+        return embedding
+
     except Exception as e:
         print(f"Error generating embedding: {e}")
         raise
@@ -189,7 +191,7 @@ def migrate_from_old_collection():
 
 def init_db(auto_migrate: bool = True):
     """
-    Initialize Qdrant collection with OpenAI embeddings (text-embedding-3-small only).
+    Initialize Qdrant collection with HuggingFace embeddings (all-MiniLM-L6-v2, 384-dim).
     
     Args:
         auto_migrate: If True, automatically migrate from old collection
@@ -222,7 +224,7 @@ def save_summary(
     metadata: dict = None
 ):
     """
-    Save ONLY the summary_text to Qdrant with OpenAI embeddings (text-embedding-3-small).
+    Save ONLY the summary_text to Qdrant with HuggingFace embeddings (all-MiniLM-L6-v2).
     
     This stores only contextual narrative text — not parameter-level structured data.
     The stored summary_text is used exclusively to provide the model with contextual
@@ -253,7 +255,7 @@ def save_summary(
         summary_text = f"Medical report for user {user_id} on {date}"
     
     try:
-        # Generate embedding using OpenAI (text-embedding-3-small)
+        # Generate embedding using HuggingFace (all-MiniLM-L6-v2)
         embedding = get_embedding(summary_text)
         
         # Prepare payload — store ONLY summary_text, no parameter-level data

@@ -157,11 +157,25 @@ export default function UploadPage() {
         setPolling(true);
         toast.success("Upload successful — deep research started.");
       } else {
-        setAnalysisData(response);
+        const hasReportText = response.summary || response.full_analysis;
+        const completedReport = !hasReportText && response.txn_id
+          ? await getReportStatus(response.txn_id)
+          : response;
+        setAnalysisData(completedReport);
         toast.success("Report processed.");
       }
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Upload failed.");
+      const detail = error?.response?.data?.detail;
+      if (detail) {
+        toast.error(detail);
+      } else if (error?.code === "ECONNABORTED") {
+        toast.error("Upload is taking longer than expected. Keep this page open and check Records shortly.");
+      } else if (!error?.response) {
+        toast.error("Cannot reach the backend. Please check that the server is running.");
+      } else {
+        toast.error(`Upload failed (${error.response.status}).`);
+      }
+      console.error("Report upload error:", error);
     } finally {
       setUploading(false);
     }
@@ -191,6 +205,7 @@ export default function UploadPage() {
   }, []);
 
   const fileSizeKb = selectedFile ? (selectedFile.size / 1024).toFixed(1) : 0;
+  const reportSummary = analysisData?.summary || analysisData?.full_analysis || "Report generated, but no report text was returned.";
 
   return (
     <div className="stack-lg page-enter">
@@ -360,7 +375,7 @@ export default function UploadPage() {
       )}
 
       {/* Analysis Results */}
-      {analysisData?.summary && (
+      {analysisData && (
         <div className="card results-card analysis-reveal">
           <div className="card-header">
             <h3>Deep Research Results</h3>
@@ -371,7 +386,7 @@ export default function UploadPage() {
               </button>
             </div>
           </div>
-          <p className="line-clamp-3" style={{ marginBottom: "1rem" }}>{analysisData.summary}</p>
+          <p className="line-clamp-3" style={{ marginBottom: "1rem" }}>{reportSummary}</p>
           <VoiceSummaryButton analysis={analysisData} />
         </div>
       )}

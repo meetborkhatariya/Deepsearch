@@ -1,7 +1,12 @@
 """Entry-point for the Open Deep Research API server."""
 
+from pathlib import Path
+
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 from open_deep_research.new_endpoint import app, router
 
@@ -86,6 +91,12 @@ app.app.include_router(router, prefix="/api/v1")
 # ---------------------------------------------------------------------------
 # Health-check
 # ---------------------------------------------------------------------------
+@app.app.get("/", tags=["health"])
+async def root() -> dict:
+    """Return a helpful API service message at the root URL."""
+    return {"service": "Open Deep Research API", "status": "ok", "docs": "/docs"}
+
+
 @app.app.get("/health", tags=["health"])
 async def health() -> dict:
     """Return a simple liveness signal."""

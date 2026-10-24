@@ -29,10 +29,11 @@ from .deep_researcher import (
     ensure_json_safe,
     deep_researcher
 )
+from .utils import get_configured_chat_model
 
 from .prompts import final_report_generation_prompt
 
-from langchain_openai import ChatOpenAI
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.callbacks.base import BaseCallbackHandler
 
@@ -237,6 +238,28 @@ def init_transaction_db():
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stored_records (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_size INTEGER,
+                stored_at TEXT NOT NULL,
+                parameters_json TEXT NOT NULL,
+                patient_info_json TEXT,
+                chronic_conditions_json TEXT,
+                report_date TEXT,
+                primary_parameter TEXT,
+                primary_value TEXT,
+                language TEXT DEFAULT 'english',
+                raw_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+            """
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_stored_records_user ON stored_records(user_id)")
         conn.commit()
         
     except Exception as e:
@@ -678,6 +701,92 @@ class HealthProfileUpdate(BaseModel):
     diet_type: Optional[str] = None
     health_history: Optional[str] = None
     surgeries: Optional[str] = None
+
+
+class StoredRecordCreate(BaseModel):
+    file_name: str
+    file_size: Optional[int] = None
+    stored_at: Optional[str] = None
+    parameters: List[Dict] = Field(default_factory=list)
+    patient_info: Dict = Field(default_factory=dict)
+    chronic_conditions: List = Field(default_factory=list)
+    report_date: Optional[str] = None
+    primary_parameter: Optional[str] = None
+    primary_value: Optional[str] = None
+    language: str = "english"
+    raw: Dict = Field(default_factory=dict)
+
+
+def _stored_record_payload(row: sqlite3.Row) -> dict:
+    record = dict(row)
+    for field in ("parameters_json", "patient_info_json", "chronic_conditions_json", "raw_json"):
+        target = field.replace("_json", "")
+        try:
+            record[target] = json.loads(record.pop(field) or ("[]" if target in ("parameters", "chronic_conditions") else "{}"))
+        except (TypeError, json.JSONDecodeError):
+            record[target] = [] if target in ("parameters", "chronic_conditions") else {}
+    record["fileName"] = record.pop("file_name")
+    record["fileSize"] = record.pop("file_size")
+    record["storedAt"] = record.pop("stored_at")
+    record["patientInfo"] = record.pop("patient_info")
+    record["chronicConditions"] = record.pop("chronic_conditions")
+    record["reportDate"] = record.pop("report_date")
+    record["primaryParameter"] = record.pop("primary_parameter")
+    record["primaryValue"] = record.pop("primary_value")
+    return record
+
+
+@router.get("/users/{user_id}/stored-records")
+async def list_stored_records(user_id: str, request: Request):
+    session_user = _get_session_user(request)
+    if not session_user or session_user["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM stored_records WHERE user_id = ? ORDER BY stored_at DESC",
+            (user_id,),
+        ).fetchall()
+    return {"status": "success", "records": [_stored_record_payload(row) for row in rows]}
+
+
+@router.post("/users/{user_id}/stored-records")
+async def create_stored_record(user_id: str, body: StoredRecordCreate, request: Request):
+    session_user = _get_session_user(request)
+    if not session_user or session_user["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    record_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO stored_records (
+                id, user_id, file_name, file_size, stored_at, parameters_json,
+                patient_info_json, chronic_conditions_json, report_date,
+                primary_parameter, primary_value, language, raw_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id, user_id, body.file_name, body.file_size, body.stored_at or now,
+                json.dumps(body.parameters), json.dumps(body.patient_info),
+                json.dumps(body.chronic_conditions), body.report_date,
+                body.primary_parameter, body.primary_value, body.language,
+                json.dumps(body.raw), now,
+            ),
+        )
+        row = conn.execute("SELECT * FROM stored_records WHERE id = ?", (record_id,)).fetchone()
+    return {"status": "success", "record": _stored_record_payload(row)}
+
+
+@router.delete("/users/{user_id}/stored-records/{record_id}")
+async def delete_stored_record(user_id: str, record_id: str, request: Request):
+    session_user = _get_session_user(request)
+    if not session_user or session_user["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    with get_db_connection() as conn:
+        cursor = conn.execute("DELETE FROM stored_records WHERE id = ? AND user_id = ?", (record_id, user_id))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Stored record not found")
+    return {"status": "success", "id": record_id}
 
 
 @router.get("/health-profile/{user_id}")
@@ -1143,7 +1252,7 @@ async def upload_pdf_report(
     file: UploadFile = FastAPIFile(..., description="Digitized PDF lab report"),
     user_id: str = Form(..., description="User identifier"),
     language: str = Form(default="english", description="Response language"),
-    model: str = Form(default="openai", description="AI model strategy"),
+    model: str = Form(default="groq", description="AI model strategy"),
 ):
     """Upload a PDF lab report → extract parameters → trigger deep research.
 
@@ -1764,8 +1873,10 @@ async def supervisor_agent_synthesis(
 **Generate the complete synthesized report now:**
 """
         
-        # Use GPT-4o-mini for synthesis (good balance of quality and cost)
-        supervisor_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.4, max_tokens=12000, callbacks=callbacks)
+        # Use Groq for synthesis (good balance of quality and cost)
+        supervisor_llm = get_configured_chat_model(
+            temperature=0.4, max_tokens=12000, callbacks=callbacks
+        )
         
         print("🤖 Generating supervisor synthesis...")
         supervisor_response = await supervisor_llm.ainvoke(supervisor_prompt)
@@ -2183,7 +2294,7 @@ Acknowledge patient efforts if values improved.
             )
             
             # Always use OpenAI (GPT-4o-mini) + Tavily
-            print("🤖 Using OpenAI (GPT-4o-mini) with Tavily web research")
+            print("🤖 Using Groq with Tavily web research")
             clean_query = f"""
 {language_instruction}
 
@@ -2210,7 +2321,7 @@ Provide comprehensive clinical analysis following the report structure guideline
                 config={"callbacks": callbacks}
             )
             main_insight = response.get("final_report") if isinstance(response, dict) else str(response)
-            models_used = "openai+tavily"
+            models_used = "groq+tavily"
         
         # Create structured summary
         structured_summary = await create_structured_summary(lab_data_dict, main_insight, report_date)
@@ -2226,10 +2337,7 @@ Provide comprehensive clinical analysis following the report structure guideline
             print(f"[SAVE SUMMARY] WARNING: No 'linked_parameters' key in structured summary!")
         
         # Generate appropriate narrative summary
-        summarizer = ChatOpenAI(
-            model="gpt-5-nano",
-            callbacks=callbacks
-        )
+        summarizer = get_configured_chat_model(model="gpt-5-nano", callbacks=callbacks)
 
         
         if is_new_user:
@@ -2756,6 +2864,15 @@ async def generate_voice(request: GenerateVoiceRequest):
             is_new_user=is_new_user,
             language=language
         )
+
+        if not voice_explanation.get("audio_base64"):
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Voice script was generated, but Sarvam AI returned no audio. "
+                    "Check SARVAM_API_KEY and try again."
+                ),
+            )
         
         # Update the transaction result with voice data
         result["voice_explanation"] = voice_explanation

@@ -2,30 +2,32 @@
 
 import chromadb
 from chromadb.config import Settings
-from openai import OpenAI
+from sentence_transformers import SentenceTransformer
 import uuid
 from datetime import datetime
 from typing import List, Dict, Optional
 import json
 import os
+import hashlib
+import random
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Lazy OpenAI client — created on first use
-_openai_client: Optional[OpenAI] = None
+# Lazy HuggingFace embedding model — loaded on first use
+_hf_model: Optional[SentenceTransformer] = None
 
 
-def _get_openai_client() -> OpenAI:
-    global _openai_client
-    if _openai_client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set. Add it to your .env file."
-            )
-        _openai_client = OpenAI(api_key=api_key)
-    return _openai_client
+def _get_hf_model() -> SentenceTransformer:
+    global _hf_model
+    if _hf_model is None:
+        print("Loading HuggingFace embedding model (all-MiniLM-L6-v2)...")
+        _hf_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return _hf_model
+
+
+
+
 
 
 # ChromaDB persistent client (embedded - no separate server needed)
@@ -33,9 +35,8 @@ client = chromadb.PersistentClient(path="./chroma_db")
 
 COLLECTION_NAME = "user_summaries_v2"
 
-# Use text-embedding-3-small (most cost-effective)
-EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSIONS = 1536
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
 
 # Auto-initialize collection
 try:
@@ -50,34 +51,30 @@ except Exception as e:
 
 def get_embedding(text: str) -> List[float]:
     """
-    Generate embedding using OpenAI's text-embedding-3-small model.
-    
+    Generate embedding using HuggingFace all-MiniLM-L6-v2 model (384-dim, local, free).
+
     Args:
         text: Text to embed
-        
+
     Returns:
-        List of floats representing the embedding vector (1536 dimensions)
+        List of floats representing the embedding vector (384 dimensions)
     """
     try:
         # Clean the text
         text = text.replace("\n", " ").strip()
-        
-        # Truncate if too long (max 8191 tokens)
+
+        # Truncate if too long
         if len(text) > 8000:
             text = text[:8000]
-        
+
         # Handle empty text
         if not text or len(text.strip()) == 0:
             text = "Empty medical report"
-        
-        # Generate embedding using text-embedding-3-small
-        response = _get_openai_client().embeddings.create(
-            input=text,
-            model=EMBEDDING_MODEL
-        )
-        
-        return response.data[0].embedding
-        
+
+        model = _get_hf_model()
+        embedding = model.encode(text, convert_to_numpy=True).tolist()
+        return embedding
+
     except Exception as e:
         print(f"Error generating embedding: {e}")
         raise

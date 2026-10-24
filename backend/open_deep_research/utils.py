@@ -38,53 +38,55 @@ from dotenv import load_dotenv
 # Load .env before any API clients are instantiated at module level
 load_dotenv(override=False)
 
-# Qdrant imports
-from langchain_qdrant import QdrantVectorStore
-from langchain_openai import OpenAIEmbeddings
-from langchain_core.documents import Document
-from qdrant_client import QdrantClient
-from qdrant_client.http import models
 ##########################
 # Qdrant Vector Store Setup
 ##########################
 
-# Initialize Qdrant client
-try:
-    qdrant_client = QdrantClient(url="http://localhost:6333")
+# Initialize Qdrant client when explicitly enabled. The API can use web search
+# without loading the local embedding model during startup.
+qdrant_initialized = False
+qdrant_vectorstore = None
 
-    # Use the OpenAI model you intend to query with
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+if os.getenv("QDRANT_ENABLED", "false").lower() == "true":
+    try:
+        from langchain_qdrant import QdrantVectorStore
+        from langchain_huggingface import HuggingFaceEmbeddings
+        from qdrant_client import QdrantClient
+        from qdrant_client.http import models
 
-    # The correct vector size for text-embedding-3-small is 1536
-    VECTOR_SIZE = 1536 
-    COLLECTION_NAME = "deep_research_memory"
+        qdrant_client = QdrantClient(url="http://localhost:6333")
 
-    collections = qdrant_client.get_collections().collections
-    collection_names = [col.name for col in collections]
+        # HuggingFace local embeddings — free, offline, 384-dim
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        VECTOR_SIZE = 384
+        COLLECTION_NAME = "deep_research_memory"
 
-    if COLLECTION_NAME not in collection_names:
-        logging.info(f"Creating collection '{COLLECTION_NAME}'...")
-        qdrant_client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=models.VectorParams(
-                size=VECTOR_SIZE,  # Use the correct dimension: 1536
-                distance=models.Distance.COSINE
+        collections = qdrant_client.get_collections().collections
+        collection_names = [col.name for col in collections]
+
+        if COLLECTION_NAME not in collection_names:
+            logging.info(f"Creating collection '{COLLECTION_NAME}'...")
+            qdrant_client.create_collection(
+                collection_name=COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=VECTOR_SIZE,
+                    distance=models.Distance.COSINE
+                )
             )
+
+        qdrant_vectorstore = QdrantVectorStore(
+            client=qdrant_client,
+            collection_name=COLLECTION_NAME,
+            embedding=embeddings
         )
 
-    qdrant_vectorstore = QdrantVectorStore(
-        client=qdrant_client,
-        collection_name=COLLECTION_NAME,
-        embedding=embeddings
-    )
+        qdrant_initialized = True
+        logging.info("Qdrant client initialized successfully")
 
-    qdrant_initialized = True
-    logging.info("Qdrant client initialized successfully")
-
-except Exception as e:
-    qdrant_initialized = False
-    qdrant_vectorstore = None
-    logging.warning(f"Qdrant initialization failed: {e}. Web search will be used as fallback.")
+    except Exception as e:
+        logging.warning(f"Qdrant initialization failed: {e}. Web search will be used as fallback.")
+else:
+    logging.info("Qdrant disabled; web search will be used as fallback.")
 
 QDRANT_SEARCH_DESCRIPTION = (
     "Retrieve relevant passages from the local Qdrant knowledge base. "
@@ -944,6 +946,13 @@ MODEL_TOKEN_LIMITS = {
     "bedrock:us.anthropic.claude-sonnet-4-20250514-v1:0": 200000,
     "bedrock:us.anthropic.claude-opus-4-20250514-v1:0": 200000,
     "anthropic.claude-opus-4-1-20250805-v1:0": 200000,
+    "groq:openai/gpt-oss-120b": 128000,
+    "groq:llama-3.1-70b-versatile": 128000,
+    "groq:llama-3.1-8b-instant": 128000,
+    "groq:llama3-70b-8192": 8192,
+    "groq:llama3-8b-8192": 8192,
+    "groq:mixtral-8x7b-32768": 32768,
+    "groq:gemma2-9b-it": 8192,
 }
 
 def get_model_token_limit(model_string):
@@ -1006,28 +1015,21 @@ def get_config_value(value):
         return value.value
 
 def get_api_key_for_model(model_name: str, config: RunnableConfig):
-    """Get API key for a specific model from environment or config."""
-    should_get_from_config = os.getenv("GET_API_KEYS_FROM_CONFIG", "false")
-    model_name = model_name.lower()
-    if should_get_from_config.lower() == "true":
-        api_keys = config.get("configurable", {}).get("apiKeys", {})
-        if not api_keys:
-            return None
-        if model_name.startswith("openai:"):
-            return api_keys.get("OPENAI_API_KEY")
-        elif model_name.startswith("anthropic:"):
-            return api_keys.get("ANTHROPIC_API_KEY")
-        elif model_name.startswith("google"):
-            return api_keys.get("GOOGLE_API_KEY")
-        return None
-    else:
-        if model_name.startswith("openai:"): 
-            return os.getenv("OPENAI_API_KEY")
-        elif model_name.startswith("anthropic:"):
-            return os.getenv("ANTHROPIC_API_KEY")
-        elif model_name.startswith("google"):
-            return os.getenv("GOOGLE_API_KEY")
-        return None
+    """Return the only supported provider key for runtime models."""
+    groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    if not groq_api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured. Add it to your .env file.")
+    return groq_api_key
+
+def get_configured_chat_model(model_name: str = "groq:openai/gpt-oss-120b", **kwargs):
+    """Create a Groq chat model. Raises if GROQ_API_KEY is not configured."""
+    groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
+
+    if not groq_api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured. Add it to your .env file.")
+
+    kwargs.pop("model", None)  # ignore caller-supplied model override
+    return init_chat_model(model="groq:openai/gpt-oss-120b", api_key=groq_api_key, **kwargs)
 
 def get_tavily_api_key(config: RunnableConfig):
     """Get Tavily API key from environment or config."""

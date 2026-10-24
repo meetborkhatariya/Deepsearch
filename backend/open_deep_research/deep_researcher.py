@@ -45,6 +45,7 @@ from .utils import (
     anthropic_websearch_called,
     get_all_tools,
     get_api_key_for_model,
+    get_configured_chat_model,
     get_model_token_limit,
     get_notes_from_tool_calls,
     get_today_str,
@@ -63,17 +64,21 @@ import json
 from .db_chroma import get_user_summaries, save_summary
 import mimetypes
 from langchain_core.prompts import ChatPromptTemplate
-from openai import AsyncOpenAI
-from langchain_openai import ChatOpenAI
+from groq import AsyncGroq
 import os
 from dotenv import load_dotenv
 from .data_extractor import extract_data
 from datetime import datetime, date
 import traceback
 
-load_dotenv() 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-MODEL_NAME = "gpt-4o-mini"
+load_dotenv()
+groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
+
+if not groq_api_key:
+    raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
+
+client = AsyncGroq(api_key=groq_api_key)
+MODEL_NAME = "openai/gpt-oss-120b"
 
 # Initialize a configurable model that we will use throughout the agent
 configurable_model = init_chat_model(
@@ -151,7 +156,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
     Returns:
         Command to proceed to research supervisor with initialized context
     """
-    # Step 1: Set up the research model for structured output
+    # Step 1: Set up the research model
     configurable = Configuration.from_runnable_config(config)
     research_model_config = {
         "model": configurable.research_model,
@@ -160,13 +165,8 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
         "tags": ["langsmith:nostream"]
     }
     
-    # Configure model for structured research question generation
-    research_model = (
-        configurable_model
-        .with_structured_output(ResearchQuestion)
-        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
-        .with_config(research_model_config)
-    )
+    # Groq can reject forced structured-output tool calls for long prompts.
+    research_model = configurable_model.with_config(research_model_config)
     
     # Step 2: Generate structured research brief from user messages
     prompt_content = transform_messages_into_research_topic_prompt.format(
@@ -174,6 +174,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
         date=get_today_str()
     )
     response = await research_model.ainvoke([HumanMessage(content=prompt_content)])
+    research_brief = response.content if isinstance(response.content, str) else str(response.content)
     
     # Step 3: Extract report_date from state (added by run_researcher_from_data)
     report_date = state.get("report_date") or datetime.now().strftime("%Y-%m-%d")
@@ -189,12 +190,12 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
     return Command(
         goto="research_supervisor", 
         update={
-            "research_brief": response.research_brief,
+            "research_brief": research_brief,
             "supervisor_messages": {
                 "type": "override",
                 "value": [
                     SystemMessage(content=supervisor_system_prompt),
-                    HumanMessage(content=response.research_brief)
+                    HumanMessage(content=research_brief)
                 ]
             }
         }
@@ -663,7 +664,7 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
     configurable = Configuration.from_runnable_config(config)
     writer_model_config = {
         "model": configurable.final_report_model,
-        "max_tokens": configurable.final_report_model_max_tokens,
+        "max_tokens": 1200,
         "api_key": get_api_key_for_model(configurable.final_report_model, config),
         "tags": ["langsmith:nostream"]
     }
@@ -701,19 +702,20 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
             is_followup = bool(previous_summaries) and len(previous_summaries) > 0
             report_type_explicit = "FOLLOW-UP REPORT" if is_followup else "FIRST-TIME REPORT"
             
-            # TOON Optimization: Compact prompt format
-            final_report_prompt = final_report_generation_prompt.format(
-                research_brief=state.get("research_brief", "")[:500],  # Truncate to 500 chars
-                messages=get_buffer_string(state.get("messages", []))[:1000],  # Truncate to 1000 chars
-                findings=findings,
-                date=get_today_str(),
-                report_date=report_date,  
-                report_type=report_type_explicit,
-                previous_summary_context=f"History: {previous_summary_context}" if previous_summary_context else "",
-                previous_report_summary=state.get("previous_report_summary", "")[:200],  # Truncate
-                current_summary_context=state.get("current_summary_context", ""),  # Full formatted data - NO truncation
-                language_instruction=state.get("language_instruction", ""),
-            )
+            # Keep the final Groq request below the account's 8,000 TPM limit.
+            final_report_prompt = f"""Write a concise patient-friendly medical lab report.
+Report type: {report_type_explicit}. Report date: {report_date}.
+Use only the current lab values below. Mention abnormal values first, practical next steps,
+and when urgent medical review is needed. Include a brief baseline/trend statement and this
+disclaimer: This information is educational and does not replace a qualified doctor.
+Language: {state.get('language_instruction', '')[:120]}.
+
+CURRENT LAB DATA:
+{state.get('current_summary_context', '')[:3500]}
+
+RESEARCH FINDINGS:
+{findings[:3500]}
+"""
             
             # Generate the final report
             final_report = await configurable_model.with_config(writer_model_config).ainvoke([
@@ -1831,10 +1833,10 @@ def has_valid_previous_data(lab_data_dict: dict) -> bool:
         print(f"Error checking previous data: {e}")
         return False
 
-def estimate_tokens(text: str, model: str = "gpt-4o-mini") -> int:
-    """Estimate token count if usage data is missing."""
+def estimate_tokens(text: str, model: str = "cl100k_base") -> int:
+    """Estimate token count using tiktoken cl100k_base encoding (approximation for Groq/Llama models)."""
     try:
-        enc = tiktoken.encoding_for_model(model)
+        enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     except Exception:
         return int(len(text) / 4)
@@ -1966,12 +1968,10 @@ async def create_structured_summary(lab_data_dict: dict, main_insight: str, repo
     interconnection_summary = ""
     if main_insight:
         try:
-            # Use OpenAI to extract the interconnection analysis
-            from langchain_openai import ChatOpenAI
+            # Use Groq to extract the interconnection analysis
             from langchain_core.prompts import ChatPromptTemplate
             
-            extraction_model = ChatOpenAI(
-                model="gpt-4o-mini",
+            extraction_model = get_configured_chat_model(
                 temperature=0,
                 max_tokens=200
             )
@@ -2254,7 +2254,7 @@ Use dashes (-) for bullet points only. Be thorough for ALL abnormal parameters, 
     structured_summary = await create_structured_summary(lab_data_dict, main_insight, report_date)
 
     # Generate a brief narrative summary for display (2-3 sentences)
-    summarizer = ChatOpenAI(model="gpt-4o-mini")
+    summarizer = get_configured_chat_model()
 
     if is_followup_report and previous_summaries:
         # For follow-up, create a summary that highlights changes.

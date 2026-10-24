@@ -15,7 +15,7 @@ export async function extractPdfToStructuredData(file, userId) {
   return data;
 }
 
-export async function uploadPdfReport({ file, userId, language = "english", model = "openai" }) {
+export async function uploadPdfReport({ file, userId, language = "english", model = "groq" }) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("user_id", userId);
@@ -23,7 +23,7 @@ export async function uploadPdfReport({ file, userId, language = "english", mode
   formData.append("model", model);
 
   const { data } = await apiClient.post(UPLOAD_REPORT_ENDPOINT, formData, {
-    timeout: 120000,
+    timeout: 300000,
   });
 
   if (data?.txn_id && userId) {

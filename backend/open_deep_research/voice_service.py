@@ -1,15 +1,86 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 """Voice insight generation service for health reports.
 
 Pipeline
 --------
-1. GPT-4o-mini generates a patient-friendly voice script from the analysis.
+1. Groq (openai/gpt-oss-120b) generates a patient-friendly voice script from the analysis.
 2. (Optional) Sarvam AI TTS converts the script to speech in the requested language.
 
 Languages supported: english, hindi, gujarati
 
 Environment variables
 ---------------------
-OPENAI_API_KEY   - required for script generation
+GROQ_API_KEY     - required for script generation
 SARVAM_API_KEY   - optional; if absent, audio is skipped and only the script is returned
 
 Sarvam AI voice codes used
@@ -31,42 +102,42 @@ from typing import Any, Dict, Optional
 _LANGUAGE_CONFIG: Dict[str, Dict[str, str]] = {
     "english": {
         "code": "en-IN",
-        "voice": "anushka",  # confirmed valid speaker for bulbul:v2
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write in clear, simple English.",
     },
     "hindi": {
         "code": "hi-IN",
-        "voice": "anushka",  # anushka is multilingual, supports Hindi
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Hindi (Devanagari script). Use simple, everyday Hindi.",
     },
     "gujarati": {
         "code": "gu-IN",
-        "voice": "anushka",  # confirmed valid: bulbul:v2 + anushka + gu-IN
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Gujarati (Gujarati script). Use simple, everyday Gujarati.",
     },
     "marathi": {
         "code": "mr-IN",
-        "voice": "anushka",  # anushka is multilingual, supports Marathi
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Marathi (Devanagari script). Use simple, everyday Marathi.",
     },
     "malayalam": {
         "code": "ml-IN",
-        "voice": "anushka",  # anushka is multilingual, supports Malayalam
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Malayalam. Use simple, everyday Malayalam.",
     },
     "kannada": {
         "code": "kn-IN",
-        "voice": "anushka",  # anushka is multilingual, supports Kannada
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Kannada. Use simple, everyday Kannada.",
     },
     "tamil": {
         "code": "ta-IN",
-        "voice": "anushka",  # anushka is multilingual, supports Tamil
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Tamil. Use simple, everyday Tamil.",
     },
     "bangla": {
         "code": "bn-IN",
-        "voice": "anushka",  # anushka is multilingual, supports Bengali
+        "voice": "priya",  # compatible with bulbul:v3
         "instruction": "Write entirely in Bangla (Bengali script). Use simple, everyday Bangla.",
     },
 }
@@ -91,12 +162,14 @@ Guidelines:
 """
 
 
-def _get_openai_async():
+def _get_groq_async():
     from openai import AsyncOpenAI
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set.")
-    return AsyncOpenAI(api_key=api_key)
+    groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
+
+    if not groq_key:
+        raise RuntimeError("GROQ_API_KEY is not set.")
+
+    return AsyncOpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
 
 
 async def _generate_script(
@@ -128,9 +201,9 @@ async def _generate_script(
         "Now write the voice message:"
     )
 
-    oai = _get_openai_async()
+    oai = _get_groq_async()
     response = await oai.chat.completions.create(
-        model="gpt-4o-mini",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": _SCRIPT_SYSTEM},
             {"role": "user", "content": user_prompt},
@@ -166,7 +239,7 @@ async def _sarvam_tts(script: str, language: str) -> Optional[str]:
                 "pace": 1.15,
                 "speech_sample_rate": 22050,
                 "enable_preprocessing": True,
-                "model": "bulbul:v2",
+                "model": "bulbul:v3",
             }
             try:
                 resp = await http.post(
@@ -185,7 +258,10 @@ async def _sarvam_tts(script: str, language: str) -> Optional[str]:
                 if audios:
                     audio_parts.append(audios[0])
             except Exception as exc:
-                print(f"[VoiceService] Sarvam TTS chunk failed: {exc}")
+                detail = ""
+                if "resp" in locals():
+                    detail = f" status={resp.status_code}, response={resp.text[:300]}"
+                print(f"[VoiceService] Sarvam TTS chunk failed: {exc}{detail}")
                 # Continue — partial audio is still useful
 
     if not audio_parts:

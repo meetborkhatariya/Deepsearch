@@ -133,11 +133,11 @@ class Configuration(BaseModel):
     
     # Model Configuration
     summarization_model: str = Field(
-        default="openai:gpt-4o-mini",
+        default="groq:openai/gpt-oss-120b",
         json_schema_extra={
             "x_oap_ui_config": {
                 "type": "text",
-                "default": "openai:gpt-4o-mini",
+                "default": "groq:openai/gpt-oss-120b",
                 "description": "Model for summarizing research results from Tavily search results"
             }
         }
@@ -168,11 +168,11 @@ class Configuration(BaseModel):
     )
     
     research_model: str = Field(
-        default="openai:gpt-4o-mini",
+        default="groq:openai/gpt-oss-120b",
         json_schema_extra={
             "x_oap_ui_config": {
                 "type": "text",
-                "default": "openai:gpt-4o-mini",
+                "default": "groq:openai/gpt-oss-120b",
                 "description": "Model for conducting research. NOTE: Make sure your Researcher Model supports the selected search API."
             }
         }
@@ -190,11 +190,11 @@ class Configuration(BaseModel):
     )
     
     compression_model: str = Field(
-        default="openai:gpt-4o-mini",
+        default="groq:openai/gpt-oss-120b",
         json_schema_extra={
             "x_oap_ui_config": {
                 "type": "text",
-                "default": "openai:gpt-4o-mini",
+                "default": "groq:openai/gpt-oss-120b",
                 "description": "Model for compressing research findings from sub-agents. NOTE: Make sure your Compression Model supports the selected search API."
             }
         }
@@ -212,22 +212,22 @@ class Configuration(BaseModel):
     )
     
     final_report_model: str = Field(
-        default="openai:gpt-4o-mini",
+        default="groq:openai/gpt-oss-120b",
         json_schema_extra={
             "x_oap_ui_config": {
                 "type": "text",
-                "default": "openai:gpt-4o-mini",
+                "default": "groq:openai/gpt-oss-120b",
                 "description": "Model for writing the final report from all research findings"
             }
         }
     )
     
     final_report_model_max_tokens: int = Field(
-        default=16000,
+        default=2500,
         json_schema_extra={
             "x_oap_ui_config": {
                 "type": "number",
-                "default": 16000,
+                "default": 2500,
                 "description": "Maximum output tokens for final report model (raised to support large reports with 30+ parameters)"
             }
         }
@@ -267,4 +267,9 @@ class Configuration(BaseModel):
             field_name: os.environ.get(field_name.upper(), configurable.get(field_name))
             for field_name in field_names
         }
+        groq_model = "groq:openai/gpt-oss-120b"
+        for model_field in ("research_model", "compression_model", "final_report_model"):
+            if values.get(model_field):
+                values[model_field] = groq_model
+
         return cls(**{k: v for k, v in values.items() if v is not None})

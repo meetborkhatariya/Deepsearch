@@ -2,22 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useAuth } from "../hooks/useAuth";
 import { extractPdfToStructuredData } from "../services/reportService";
+import { createStoredRecord, deleteStoredRecord, getStoredRecords } from "../services/storedRecordService";
 import { checkAbnormal } from "../utils/formatters";
-
-const STORE_KEY_PREFIX = "health_stored_";
-
-function getStoredRecords(userId) {
-  try {
-    const raw = localStorage.getItem(`${STORE_KEY_PREFIX}${userId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveStoredRecords(userId, records) {
-  localStorage.setItem(`${STORE_KEY_PREFIX}${userId}`, JSON.stringify(records));
-}
 
 export default function StorePage() {
   const { user } = useAuth();
@@ -29,9 +15,16 @@ export default function StorePage() {
   const [pdfViewRec, setPdfViewRec] = useState(null);
   const [researchingId, setResearchingId] = useState(null);
 
-  useEffect(() => {
-    if (user?.id) setRecords(getStoredRecords(user.id));
+  const loadRecords = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setRecords(await getStoredRecords(user.id));
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Unable to load stored records.");
+    }
   }, [user?.id]);
+
+  useEffect(() => { loadRecords(); }, [loadRecords]);
 
   const handleFileChange = (e) => {
     const f = e.target.files?.[0];
@@ -45,15 +38,6 @@ export default function StorePage() {
     if (f && f.type === "application/pdf") setFile(f);
     else toast.error("Please drop a PDF file.");
   };
-
-  /* Convert the file to a base64 data-URL so the user can re-view the PDF later */
-  const fileToBase64 = (f) =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(f);
-    });
 
   /* Build a flat parameter array from any backend response shape */
   const normalizeParameters = (data) => {
@@ -110,10 +94,7 @@ export default function StorePage() {
     if (!file || !user?.id) return;
     setUploading(true);
     try {
-      const [data, pdfDataUrl] = await Promise.all([
-        extractPdfToStructuredData(file, user.id),
-        fileToBase64(file),
-      ]);
+      const data = await extractPdfToStructuredData(file, user.id);
 
       const parameters = normalizeParameters(data);
 
@@ -134,13 +115,11 @@ export default function StorePage() {
         primaryParameter: data.parameterName || null,
         primaryValue: data.currentValue || null,
         language: data.language || "english",
-        pdfDataUrl,
         raw: data,
         deepResearchTxnId: null,
       };
-      const next = [record, ...records];
-      setRecords(next);
-      saveStoredRecords(user.id, next);
+      const savedRecord = await createStoredRecord(user.id, record);
+      setRecords((current) => [savedRecord, ...current]);
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       toast.success(`Report stored — ${parameters.length} parameters extracted!`);
@@ -149,7 +128,7 @@ export default function StorePage() {
     } finally {
       setUploading(false);
     }
-  }, [file, user?.id, records]);
+  }, [file, user?.id]);
 
   const handleDeepResearch = useCallback(async (record) => {
     if (!user?.id) return;
@@ -166,12 +145,15 @@ export default function StorePage() {
     }
   }, [user?.id]);
 
-  const handleDelete = useCallback((id) => {
-    const next = records.filter((r) => r.id !== id);
-    setRecords(next);
-    if (user?.id) saveStoredRecords(user.id, next);
-    toast.success("Record removed.");
-  }, [records, user?.id]);
+  const handleDelete = useCallback(async (id) => {
+    try {
+      await deleteStoredRecord(user.id, id);
+      setRecords((current) => current.filter((record) => record.id !== id));
+      toast.success("Record removed.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not remove record.");
+    }
+  }, [user?.id]);
 
 
 

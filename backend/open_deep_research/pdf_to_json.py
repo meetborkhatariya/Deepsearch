@@ -31,13 +31,13 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 def _get_openai():
-    """Lazy import to avoid crash when OPENAI_API_KEY is not yet loaded."""
+    """Create Groq-compatible OpenAI client (Groq key only)."""
     from openai import AsyncOpenAI
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set. Add it to your .env file.")
-    return AsyncOpenAI(api_key=api_key)
+    groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    if not groq_key:
+        raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
+    return AsyncOpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ async def _text_to_lab_json(full_text: str) -> Dict[str, Any]:
 
     oai = _get_openai()
     response = await oai.chat.completions.create(
-        model="gpt-4o-mini",
+        model="openai/gpt-oss-120b",
         messages=[
             {
                 "role": "user",
@@ -343,7 +343,7 @@ async def extract_lab_json_from_pdf(
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"LLM returned invalid JSON: {exc}") from exc
     except Exception as exc:
-        raise RuntimeError(f"OpenAI call failed: {exc}") from exc
+        raise RuntimeError(f"Groq call failed: {exc}") from exc
 
     # Step 3: Normalise to exact schema
     result = _normalise_result(raw_result, user_id)
@@ -382,6 +382,6 @@ async def extract_lab_json_from_pdf_text(
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"LLM returned invalid JSON: {exc}") from exc
     except Exception as exc:
-        raise RuntimeError(f"OpenAI call failed: {exc}") from exc
+        raise RuntimeError(f"Groq call failed: {exc}") from exc
 
     return _normalise_result(raw_result, user_id)

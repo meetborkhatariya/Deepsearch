@@ -6,9 +6,11 @@ import { useAuth } from "./hooks/useAuth";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
+import ReportDetailPage from "./pages/ReportDetailPage";
 import RecordsPage from "./pages/RecordsPage";
 import SignupPage from "./pages/SignupPage";
 import StorePage from "./pages/StorePage";
+import TrendsPage from "./pages/TrendsPage";
 import UploadPage from "./pages/UploadPage";
 
 function HomeRedirect() {
@@ -28,6 +30,8 @@ export default function App() {
           <Route element={<MainLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/records" element={<RecordsPage />} />
+            <Route path="/records/:txnId" element={<ReportDetailPage />} />
+            <Route path="/trends" element={<TrendsPage />} />
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/store" element={<StorePage />} />
             <Route path="/profile" element={<ProfilePage />} />

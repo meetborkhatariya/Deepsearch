@@ -89,14 +89,12 @@ Rules:
 
 
 def _get_openai():
-    """Lazy import to avoid crash when OPENAI_API_KEY is not yet loaded."""
+    """Create Groq-compatible OpenAI client (Groq key only)."""
     from openai import AsyncOpenAI
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not set. Add it to your .env file."
-        )
-    return AsyncOpenAI(api_key=api_key)
+    groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    if not groq_key:
+        raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
+    return AsyncOpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
 
 
 def _parse_llm_json(raw: str) -> Dict[str, Any]:
@@ -131,7 +129,7 @@ async def _extract_from_pdf(file_content: bytes) -> Dict[str, Any]:
     oai = _get_openai()
     try:
         response = await oai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="openai/gpt-oss-120b",
             messages=[
                 {
                     "role": "user",
@@ -148,7 +146,7 @@ async def _extract_from_pdf(file_content: bytes) -> Dict[str, Any]:
     except json.JSONDecodeError as exc:
         return {"error": f"LLM returned invalid JSON: {exc}"}
     except Exception as exc:
-        return {"error": f"OpenAI call failed: {exc}"}
+        return {"error": f"Groq call failed: {exc}"}
 
 
 async def _extract_from_image(file_content: bytes, content_type: str) -> Dict[str, Any]:
@@ -156,28 +154,11 @@ async def _extract_from_image(file_content: bytes, content_type: str) -> Dict[st
     b64 = base64.b64encode(file_content).decode("utf-8")
     data_url = f"data:{content_type};base64,{b64}"
 
-    oai = _get_openai()
-    try:
-        response = await oai.chat.completions.create(
-            model="gpt-4o",  # vision-capable model
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": _VISION_PROMPT},
-                        {"type": "image_url", "image_url": {"url": data_url, "detail": "high"}},
-                    ],
-                }
-            ],
-            temperature=0,
-            max_tokens=4096,
-        )
-        raw_json = response.choices[0].message.content or ""
-        return _parse_llm_json(raw_json)
-    except json.JSONDecodeError as exc:
-        return {"error": f"LLM returned invalid JSON: {exc}"}
-    except Exception as exc:
-        return {"error": f"OpenAI vision call failed: {exc}"}
+    return {
+        "error": "Image extraction is disabled in Groq-only mode. Upload PDF text reports instead."
+    }
+
+    # Unreachable branch retained intentionally removed for Groq-only mode.
 
 
 async def extract_data(file_content: bytes, content_type: str) -> Dict[str, Any]:

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import ReportModal from "../components/common/ReportModal";
@@ -132,6 +133,9 @@ export default function RecordsPage() {
               </div>
 
               <div className="record-card-actions">
+                <Link className="btn btn-secondary btn-sm" to={`/records/${record.txn_id}`}>
+                  View details
+                </Link>
                 {record.full_analysis && (
                   <button className="btn btn-secondary btn-sm" onClick={() => setModalRecord(record)}>
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

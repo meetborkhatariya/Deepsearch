@@ -167,6 +167,81 @@
   color: var(--text-muted);
 }
 
+.report-stat-value {
+  font-size: 1.1rem !important;
+  line-height: 1.3 !important;
+  text-transform: capitalize;
+}
+
+.report-detail-section {
+  padding: var(--space-xl);
+}
+
+.report-summary {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.trend-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.trend-controls .form-select {
+  max-width: 360px;
+}
+
+.trend-panel {
+  overflow: hidden;
+}
+
+.trend-chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.trend-chart {
+  display: block;
+  min-width: 620px;
+  width: 100%;
+  height: auto;
+}
+
+.trend-grid-line {
+  stroke: var(--border-light);
+  stroke-width: 1;
+}
+
+.trend-axis-label,
+.trend-date-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+.trend-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trend-point {
+  fill: var(--surface);
+  stroke: var(--accent-dark);
+  stroke-width: 3;
+}
+
+.trend-empty {
+  padding: var(--space-2xl) var(--space-md);
+  text-align: center;
+}
+
+.trend-status-abnormal { color: var(--danger) !important; }
+.trend-status-normal { color: var(--success) !important; }
+
 .stat-icon {
   width: 44px;
   height: 44px;
